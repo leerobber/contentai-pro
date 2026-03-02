@@ -66,7 +66,12 @@ class DNAScoreRequest(BaseModel):
 
 @router.post("/generate")
 async def generate_full(req: GenerateRequest):
-    """Full 9-stage pipeline: Research → Write → Fact-Check → Edit → SEO → Headline → DNA → Debate → Atomize."""
+    """Up to 9-stage pipeline: Research → Write → Fact-Check → Edit → SEO → Headline → DNA → Debate → Atomize.
+
+    Stages are conditional: DNA requires a dna_profile; debate/atomize respect enable_debate/enable_atomizer;
+    any stage can be skipped via skip_stages (use stage keys: research, write, fact_check, edit, seo,
+    headline, dna, debate, atomize).
+    """
     config = PipelineConfig(
         topic=req.topic,
         content_type=req.content_type,

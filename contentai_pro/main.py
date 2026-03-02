@@ -55,6 +55,7 @@ class HealthResponse(BaseModel):
     version: str
     mode: str
     agents: List[str]
+    stages: List[str]
     features: List[str]
 
 
@@ -65,6 +66,7 @@ async def health():
         version="2.0.0",
         mode=settings.LLM_PROVIDER,
         agents=["researcher", "writer", "fact_checker", "editor", "seo", "headline", "debate", "atomizer"],
+        stages=["research", "write", "fact_check", "edit", "seo", "headline", "dna", "debate", "atomize"],
         features=["dna_engine", "adversarial_debate", "content_atomizer", "trend_radar"],
     )
 
