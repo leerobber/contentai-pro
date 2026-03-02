@@ -4,9 +4,36 @@ import logging
 import random
 from typing import Optional, Dict, Any
 from contentai_pro.core.config import settings
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+    before_log,
+)
 
 logger = logging.getLogger("contentai")
 
+
+# ---------------------------------------------------------------------------
+# Custom exceptions
+# ---------------------------------------------------------------------------
+
+class LLMError(Exception):
+    """Base exception for LLM adapter errors."""
+
+
+class RateLimitError(LLMError):
+    """Raised when the LLM provider returns a rate-limit response."""
+
+
+class LLMTimeoutError(LLMError):
+    """Raised when an LLM request times out."""
+
+
+# ---------------------------------------------------------------------------
+# Adapter
+# ---------------------------------------------------------------------------
 
 class LLMAdapter:
     """Provider-agnostic LLM interface with prompt routing."""
@@ -14,12 +41,18 @@ class LLMAdapter:
     def __init__(self):
         self._provider = settings.LLM_PROVIDER
         self._client = None
+        self._request_count: int = 0
         self._init_client()
 
     @property
     def provider(self) -> str:
         """Return the active provider name."""
         return self._provider
+
+    @property
+    def request_count(self) -> int:
+        """Return the total number of LLM requests made."""
+        return self._request_count
 
     def _init_client(self):
         if self._provider == "anthropic" and settings.ANTHROPIC_API_KEY:
@@ -47,6 +80,8 @@ class LLMAdapter:
                        temperature: float = None, json_mode: bool = False) -> str:
         max_tokens = max_tokens or settings.MAX_TOKENS
         temperature = temperature if temperature is not None else settings.TEMPERATURE
+        self._request_count += 1
+        logger.debug("LLM request #%d via %s", self._request_count, self._provider)
 
         if self._provider == "anthropic":
             return await self._anthropic_generate(system, prompt, max_tokens, temperature)
@@ -55,33 +90,63 @@ class LLMAdapter:
         else:
             return await self._mock_generate(system, prompt, json_mode)
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception_type((RateLimitError, LLMTimeoutError)),
+        before=before_log(logger, logging.WARNING),
+        reraise=True,
+    )
     async def _anthropic_generate(self, system: str, prompt: str,
                                    max_tokens: int, temperature: float) -> str:
-        response = await self._client.messages.create(
-            model=settings.MODEL_NAME,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            system=system,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return response.content[0].text
+        try:
+            response = await self._client.messages.create(
+                model=settings.MODEL_NAME,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                system=system,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            return response.content[0].text
+        except Exception as exc:
+            exc_str = str(exc).lower()
+            if "rate" in exc_str or "429" in exc_str:
+                raise RateLimitError(str(exc)) from exc
+            if "timeout" in exc_str or "timed out" in exc_str:
+                raise LLMTimeoutError(str(exc)) from exc
+            raise LLMError(str(exc)) from exc
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception_type((RateLimitError, LLMTimeoutError)),
+        before=before_log(logger, logging.WARNING),
+        reraise=True,
+    )
     async def _openai_generate(self, system: str, prompt: str,
                                 max_tokens: int, temperature: float,
                                 json_mode: bool) -> str:
-        kwargs = {
-            "model": settings.MODEL_NAME,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": prompt},
-            ],
-        }
-        if json_mode:
-            kwargs["response_format"] = {"type": "json_object"}
-        response = await self._client.chat.completions.create(**kwargs)
-        return response.choices[0].message.content
+        try:
+            kwargs = {
+                "model": settings.MODEL_NAME,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": prompt},
+                ],
+            }
+            if json_mode:
+                kwargs["response_format"] = {"type": "json_object"}
+            response = await self._client.chat.completions.create(**kwargs)
+            return response.choices[0].message.content
+        except Exception as exc:
+            exc_str = str(exc).lower()
+            if "rate" in exc_str or "429" in exc_str:
+                raise RateLimitError(str(exc)) from exc
+            if "timeout" in exc_str or "timed out" in exc_str:
+                raise LLMTimeoutError(str(exc)) from exc
+            raise LLMError(str(exc)) from exc
 
     async def _mock_generate(self, system: str, prompt: str, json_mode: bool = False) -> str:
         """Deterministic mock for UI testing without API keys."""
@@ -104,6 +169,10 @@ class LLMAdapter:
             return self._mock_critic()
         if "judge" in system.lower():
             return self._mock_judge()
+        if "reviser" in system.lower() or "revise" in system.lower():
+            return self._mock_revise(prompt_lower)
+        if "platform" in system.lower() or "adaptation" in system.lower():
+            return self._mock_platform_variant(prompt_lower)
 
         return f"[Mock LLM] Response to: {prompt[:100]}..."
 
@@ -184,6 +253,12 @@ class LLMAdapter:
             "weaknesses": ["Needs active voice", "Add social proof", "Strengthen CTA"],
             "revision_notes": "Convert passive constructions. Add 1-2 customer quotes. End with clear next step."
         })
+
+    def _mock_revise(self, prompt: str) -> str:
+        return "[Revised content with improved structure, active voice, and stronger CTA.]"
+
+    def _mock_platform_variant(self, prompt: str) -> str:
+        return "[Platform-optimized variant with appropriate format, length, and style.]"
 
     def _mock_json(self, prompt: str) -> str:
         return json.dumps({

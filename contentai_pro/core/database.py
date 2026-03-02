@@ -53,6 +53,15 @@ class Database:
                 judge_verdict TEXT,
                 created_at TEXT
             );
+            CREATE TABLE IF NOT EXISTS content_versions (
+                id TEXT PRIMARY KEY,
+                content_id TEXT REFERENCES content(id),
+                stage TEXT NOT NULL,
+                body TEXT,
+                metadata TEXT DEFAULT '{}',
+                version_num INTEGER DEFAULT 1,
+                created_at TEXT
+            );
         """)
 
     async def save_content(self, topic: str, body: str, content_type: str = "blog_post",
@@ -106,6 +115,48 @@ class Database:
         )
         await self._conn.commit()
         return aid
+
+    async def save_version(self, content_id: str, stage: str, body: str,
+                            metadata: dict = None, version_num: int = 1) -> str:
+        vid = str(uuid.uuid4())
+        now = datetime.now(timezone.utc).isoformat()
+        await self._conn.execute(
+            "INSERT INTO content_versions (id, content_id, stage, body, metadata, version_num, created_at) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (vid, content_id, stage, body, json.dumps(metadata or {}), version_num, now)
+        )
+        await self._conn.commit()
+        return vid
+
+    async def get_content_history(self, content_id: str) -> List[Dict]:
+        cursor = await self._conn.execute(
+            "SELECT * FROM content_versions WHERE content_id = ? ORDER BY version_num ASC",
+            (content_id,)
+        )
+        rows = await cursor.fetchall()
+        result = []
+        for r in rows:
+            d = dict(r)
+            d["metadata"] = json.loads(d["metadata"])
+            result.append(d)
+        return result
+
+    async def restore_version(self, content_id: str, version_id: str) -> bool:
+        """Restore content body from a specific version."""
+        cursor = await self._conn.execute(
+            "SELECT body FROM content_versions WHERE id = ? AND content_id = ?",
+            (version_id, content_id)
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return False
+        now = datetime.now(timezone.utc).isoformat()
+        await self._conn.execute(
+            "UPDATE content SET body = ?, updated_at = ? WHERE id = ?",
+            (row["body"], now, content_id)
+        )
+        await self._conn.commit()
+        return True
 
     async def close(self):
         if self._conn:

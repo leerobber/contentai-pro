@@ -2,8 +2,11 @@
 
 Research → Writer → Editor → SEO → DNA Score → Debate → Atomizer
 """
+import asyncio
+import logging
 import time
 from dataclasses import dataclass, field, asdict
+from enum import Enum
 from typing import Dict, Any, Optional, List
 
 from contentai_pro.ai.agents.specialists import ResearchAgent, WriterAgent, EditorAgent, SEOAgent
@@ -12,6 +15,19 @@ from contentai_pro.ai.dna.engine import dna_engine
 from contentai_pro.ai.atomizer.engine import atomizer_engine, AtomizerResult
 from contentai_pro.core.events import event_bus, PipelineEvent
 from contentai_pro.core.database import db
+
+logger = logging.getLogger("contentai")
+
+
+class PipelineStage(str, Enum):
+    RESEARCH = "research"
+    WRITE = "write"
+    EDIT = "edit"
+    SEO = "seo"
+    DNA = "dna"
+    DEBATE = "debate"
+    ATOMIZE = "atomize"
+    PIPELINE = "pipeline"
 
 
 @dataclass
@@ -27,6 +43,7 @@ class PipelineConfig:
     enable_atomizer: bool = True
     atomizer_platforms: Optional[List[str]] = None
     skip_stages: List[str] = field(default_factory=list)
+    parallel_atomize: bool = True
 
 
 @dataclass
@@ -43,6 +60,8 @@ class PipelineResult:
     atomized: Optional[Dict] = None
     final_content: str = ""
     total_latency_ms: float = 0.0
+    stage_latencies: Dict[str, float] = field(default_factory=dict)
+    errors: List[str] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -55,130 +74,187 @@ class Orchestrator:
         self.editor = EditorAgent()
         self.seo = SEOAgent()
 
+    async def _run_stage(self, pid: str, stage: str, coro) -> Any:
+        """Run a single stage with timing and event emission."""
+        t0 = time.perf_counter()
+        await event_bus.emit_stage(pid, stage, "started")
+        result = await coro
+        latency_ms = (time.perf_counter() - t0) * 1000
+        logger.debug("Stage '%s' completed in %.1f ms", stage, latency_ms)
+        return result, latency_ms
+
     async def run(self, config: PipelineConfig, pipeline_id: Optional[str] = None) -> PipelineResult:
         t0 = time.perf_counter()
         pid = pipeline_id or event_bus.new_pipeline_id()
-        stages_completed = []
+        stages_completed: List[str] = []
+        stage_latencies: Dict[str, float] = {}
+        errors: List[str] = []
         result = PipelineResult(content_id="", topic=config.topic, stages_completed=[])
 
         # ---------- Stage 1: Research ----------
-        if "research" not in config.skip_stages:
-            await event_bus.emit_stage(pid, "research", "started")
-            res = await self.researcher.execute({
-                "topic": config.topic,
-                "content_type": config.content_type,
-                "audience": config.audience,
-            })
-            result.research = res.output
-            stages_completed.append("research")
-            await event_bus.emit_stage(pid, "research", "completed", {"length": len(res.output)})
+        if PipelineStage.RESEARCH not in config.skip_stages:
+            try:
+                res, lat = await self._run_stage(pid, PipelineStage.RESEARCH, self.researcher.execute({
+                    "topic": config.topic,
+                    "content_type": config.content_type,
+                    "audience": config.audience,
+                }))
+                result.research = res.output
+                stages_completed.append(PipelineStage.RESEARCH)
+                stage_latencies[PipelineStage.RESEARCH] = lat
+                await event_bus.emit_stage(pid, PipelineStage.RESEARCH, "completed", {"length": len(res.output)})
+            except Exception as exc:
+                logger.warning("Research stage error: %s", exc)
+                errors.append(f"research: {exc}")
 
         # ---------- Stage 2: Write ----------
-        if "write" not in config.skip_stages:
-            await event_bus.emit_stage(pid, "write", "started")
-            dna_summary = None
-            if config.dna_profile:
-                dna_summary = dna_engine.get_profile_summary(config.dna_profile)
+        if PipelineStage.WRITE not in config.skip_stages:
+            try:
+                dna_summary = None
+                if config.dna_profile:
+                    dna_summary = dna_engine.get_profile_summary(config.dna_profile)
 
-            res = await self.writer.execute({
-                "topic": config.topic,
-                "research": result.research,
-                "content_type": config.content_type,
-                "dna_profile": dna_summary,
-                "tone": config.tone,
-                "word_count": config.word_count,
-            })
-            result.draft = res.output
-            stages_completed.append("write")
-            await event_bus.emit_stage(pid, "write", "completed", {"length": len(res.output)})
+                res, lat = await self._run_stage(pid, PipelineStage.WRITE, self.writer.execute({
+                    "topic": config.topic,
+                    "research": result.research,
+                    "content_type": config.content_type,
+                    "dna_profile": dna_summary,
+                    "tone": config.tone,
+                    "word_count": config.word_count,
+                }))
+                result.draft = res.output
+                stages_completed.append(PipelineStage.WRITE)
+                stage_latencies[PipelineStage.WRITE] = lat
+                await event_bus.emit_stage(pid, PipelineStage.WRITE, "completed", {"length": len(res.output)})
+            except Exception as exc:
+                logger.warning("Write stage error: %s", exc)
+                errors.append(f"write: {exc}")
 
         # ---------- Stage 3: Edit ----------
-        if "edit" not in config.skip_stages:
-            await event_bus.emit_stage(pid, "edit", "started")
-            res = await self.editor.execute({
-                "draft": result.draft,
-                "topic": config.topic,
-                "content_type": config.content_type,
-            })
-            result.edited = res.output
-            stages_completed.append("edit")
-            await event_bus.emit_stage(pid, "edit", "completed", {"length": len(res.output)})
+        if PipelineStage.EDIT not in config.skip_stages:
+            try:
+                res, lat = await self._run_stage(pid, PipelineStage.EDIT, self.editor.execute({
+                    "draft": result.draft,
+                    "topic": config.topic,
+                    "content_type": config.content_type,
+                }))
+                result.edited = res.output
+                stages_completed.append(PipelineStage.EDIT)
+                stage_latencies[PipelineStage.EDIT] = lat
+                await event_bus.emit_stage(pid, PipelineStage.EDIT, "completed", {"length": len(res.output)})
+            except Exception as exc:
+                logger.warning("Edit stage error: %s", exc)
+                errors.append(f"edit: {exc}")
 
         # ---------- Stage 4: SEO ----------
-        if "seo" not in config.skip_stages:
-            await event_bus.emit_stage(pid, "seo", "started")
-            res = await self.seo.execute({
-                "content": result.edited or result.draft,
-                "topic": config.topic,
-                "keywords": config.keywords,
-            })
-            result.seo_optimized = res.output
-            stages_completed.append("seo")
-            await event_bus.emit_stage(pid, "seo", "completed", {"length": len(res.output)})
+        if PipelineStage.SEO not in config.skip_stages:
+            try:
+                res, lat = await self._run_stage(pid, PipelineStage.SEO, self.seo.execute({
+                    "content": result.edited or result.draft,
+                    "topic": config.topic,
+                    "keywords": config.keywords,
+                }))
+                result.seo_optimized = res.output
+                stages_completed.append(PipelineStage.SEO)
+                stage_latencies[PipelineStage.SEO] = lat
+                await event_bus.emit_stage(pid, PipelineStage.SEO, "completed", {"length": len(res.output)})
+            except Exception as exc:
+                logger.warning("SEO stage error: %s", exc)
+                errors.append(f"seo: {exc}")
 
         current_content = result.seo_optimized or result.edited or result.draft
 
         # ---------- Stage 5: DNA Score ----------
-        if config.dna_profile and "dna" not in config.skip_stages:
-            await event_bus.emit_stage(pid, "dna", "started")
-            dna_result = dna_engine.score(current_content, config.dna_profile)
-            result.dna_score = dna_result
-            stages_completed.append("dna")
-            await event_bus.emit_stage(pid, "dna", "completed", {"score": dna_result.get("overall_score", 0)})
+        if config.dna_profile and PipelineStage.DNA not in config.skip_stages:
+            try:
+                t_dna = time.perf_counter()
+                await event_bus.emit_stage(pid, PipelineStage.DNA, "started")
+                dna_result = dna_engine.score(current_content, config.dna_profile)
+                result.dna_score = dna_result
+                lat = (time.perf_counter() - t_dna) * 1000
+                stages_completed.append(PipelineStage.DNA)
+                stage_latencies[PipelineStage.DNA] = lat
+                await event_bus.emit_stage(pid, PipelineStage.DNA, "completed",
+                                           {"score": dna_result.get("overall_score", 0)})
+            except Exception as exc:
+                logger.warning("DNA stage error: %s", exc)
+                errors.append(f"dna: {exc}")
 
-        # ---------- Stage 6: Adversarial Debate ----------
-        if config.enable_debate and "debate" not in config.skip_stages:
-            await event_bus.emit_stage(pid, "debate", "started")
-            debate_result: DebateResult = await debate_engine.run(
-                current_content, config.topic, config.content_type
+        # ---------- Stages 6 & 7: Debate + Atomize (optionally parallel) ----------
+        debate_enabled = config.enable_debate and PipelineStage.DEBATE not in config.skip_stages
+        atomize_enabled = config.enable_atomizer and PipelineStage.ATOMIZE not in config.skip_stages
+
+        if debate_enabled and atomize_enabled and config.parallel_atomize:
+            # Run debate and atomize concurrently
+            debate_task = asyncio.create_task(
+                debate_engine.run(current_content, config.topic, config.content_type)
             )
-            result.debate = {
-                "passed": debate_result.passed,
-                "final_score": debate_result.final_score,
-                "total_rounds": debate_result.total_rounds,
-                "rounds": [
-                    {
-                        "round": r.round_num,
-                        "advocate": r.advocate_argument[:300],
-                        "critic": r.critic_argument[:300],
-                        "score": r.judge_score,
-                        "verdict": r.judge_verdict,
-                    }
-                    for r in debate_result.rounds
-                ],
-            }
-            if debate_result.revised_content:
-                current_content = debate_result.revised_content
-            stages_completed.append("debate")
-            await event_bus.emit_stage(pid, "debate", "completed", {
-                "passed": debate_result.passed, "score": debate_result.final_score
-            })
+            atomize_task = asyncio.create_task(
+                atomizer_engine.atomize(current_content, config.topic, config.atomizer_platforms)
+            )
+            await event_bus.emit_stage(pid, PipelineStage.DEBATE, "started")
+            await event_bus.emit_stage(pid, PipelineStage.ATOMIZE, "started")
+
+            try:
+                debate_result, atom_result = await asyncio.gather(debate_task, atomize_task)
+                result.debate = self._format_debate(debate_result)
+                if debate_result.revised_content:
+                    current_content = debate_result.revised_content
+                stages_completed.append(PipelineStage.DEBATE)
+                stages_completed.append(PipelineStage.ATOMIZE)
+                await event_bus.emit_stage(pid, PipelineStage.DEBATE, "completed",
+                                           {"passed": debate_result.passed, "score": debate_result.final_score})
+                result.atomized = self._format_atomized(atom_result)
+                await event_bus.emit_stage(pid, PipelineStage.ATOMIZE, "completed",
+                                           {"platforms": atom_result.platforms_generated})
+            except Exception as exc:
+                logger.warning("Parallel debate/atomize error: %s", exc)
+                errors.append(f"parallel_stage: {exc}")
+        else:
+            # Sequential execution
+            if debate_enabled:
+                try:
+                    t_d = time.perf_counter()
+                    await event_bus.emit_stage(pid, PipelineStage.DEBATE, "started")
+                    debate_result: DebateResult = await debate_engine.run(
+                        current_content, config.topic, config.content_type
+                    )
+                    result.debate = self._format_debate(debate_result)
+                    if debate_result.revised_content:
+                        current_content = debate_result.revised_content
+                    lat = (time.perf_counter() - t_d) * 1000
+                    stages_completed.append(PipelineStage.DEBATE)
+                    stage_latencies[PipelineStage.DEBATE] = lat
+                    await event_bus.emit_stage(pid, PipelineStage.DEBATE, "completed", {
+                        "passed": debate_result.passed, "score": debate_result.final_score
+                    })
+                except Exception as exc:
+                    logger.warning("Debate stage error: %s", exc)
+                    errors.append(f"debate: {exc}")
+
+            if atomize_enabled:
+                try:
+                    t_a = time.perf_counter()
+                    await event_bus.emit_stage(pid, PipelineStage.ATOMIZE, "started")
+                    atom_result: AtomizerResult = await atomizer_engine.atomize(
+                        current_content, config.topic, config.atomizer_platforms
+                    )
+                    result.atomized = self._format_atomized(atom_result)
+                    lat = (time.perf_counter() - t_a) * 1000
+                    stages_completed.append(PipelineStage.ATOMIZE)
+                    stage_latencies[PipelineStage.ATOMIZE] = lat
+                    await event_bus.emit_stage(pid, PipelineStage.ATOMIZE, "completed",
+                                               {"platforms": atom_result.platforms_generated})
+                except Exception as exc:
+                    logger.warning("Atomize stage error: %s", exc)
+                    errors.append(f"atomize: {exc}")
 
         result.final_content = current_content
 
-        # ---------- Stage 7: Atomize ----------
-        if config.enable_atomizer and "atomize" not in config.skip_stages:
-            await event_bus.emit_stage(pid, "atomize", "started")
-            atom_result: AtomizerResult = await atomizer_engine.atomize(
-                current_content, config.topic, config.atomizer_platforms
-            )
-            result.atomized = {
-                "platforms": atom_result.platforms_generated,
-                "variants": [
-                    {
-                        "platform": v.platform,
-                        "format": v.format,
-                        "content": v.content,
-                        "char_count": v.char_count,
-                    }
-                    for v in atom_result.variants
-                ],
-            }
-            stages_completed.append("atomize")
-            await event_bus.emit_stage(pid, "atomize", "completed", {"platforms": atom_result.platforms_generated})
-
         # ---------- Persist ----------
         result.stages_completed = stages_completed
+        result.stage_latencies = stage_latencies
+        result.errors = errors
         result.total_latency_ms = (time.perf_counter() - t0) * 1000
         result.content_id = await db.save_content(
             topic=config.topic,
@@ -191,13 +267,48 @@ class Orchestrator:
         )
 
         # Pipeline complete
-        await event_bus.emit_stage(pid, "pipeline", "completed", {
+        await event_bus.emit_stage(pid, PipelineStage.PIPELINE, "completed", {
             "content_id": result.content_id,
             "stages": stages_completed,
             "latency_ms": result.total_latency_ms,
         })
+        logger.info("Pipeline complete: %s (%.1f ms, %d stages)", pid,
+                    result.total_latency_ms, len(stages_completed))
 
         return result
+
+    @staticmethod
+    def _format_debate(debate_result: DebateResult) -> dict:
+        return {
+            "passed": debate_result.passed,
+            "final_score": debate_result.final_score,
+            "total_rounds": debate_result.total_rounds,
+            "rounds": [
+                {
+                    "round": r.round_num,
+                    "advocate": r.advocate_argument[:300],
+                    "critic": r.critic_argument[:300],
+                    "score": r.judge_score,
+                    "verdict": r.judge_verdict,
+                }
+                for r in debate_result.rounds
+            ],
+        }
+
+    @staticmethod
+    def _format_atomized(atom_result: AtomizerResult) -> dict:
+        return {
+            "platforms": atom_result.platforms_generated,
+            "variants": [
+                {
+                    "platform": v.platform,
+                    "format": v.format,
+                    "content": v.content,
+                    "char_count": v.char_count,
+                }
+                for v in atom_result.variants
+            ],
+        }
 
 
 orchestrator = Orchestrator()
