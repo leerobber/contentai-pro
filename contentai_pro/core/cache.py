@@ -1,6 +1,7 @@
 """In-memory LRU cache with TTL support."""
 import time
 import logging
+import threading
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -23,61 +24,74 @@ class _CacheEntry:
 
 
 class LRUCache:
-    """In-process LRU cache with per-entry TTL. Not thread-safe; designed for single-threaded asyncio use."""
+    """Thread-safe in-process LRU cache with per-entry TTL.
+
+    Uses a ``threading.Lock`` to protect all mutations, making it safe for
+    use from multiple threads or from sync code called via
+    ``asyncio.run_in_executor``.  All public methods are synchronous.
+    """
 
     def __init__(self, max_size: int = 512):
         self._max_size = max_size
         self._store: OrderedDict[str, _CacheEntry] = OrderedDict()
         self._hits = 0
         self._misses = 0
+        self._lock = threading.Lock()
 
     def get(self, key: str) -> Optional[Any]:
-        entry = self._store.get(key)
-        if entry is None:
-            self._misses += 1
-            return None
-        if time.time() > entry.expires_at:
-            del self._store[key]
-            self._misses += 1
-            return None
-        # Move to end (most recently used)
-        self._store.move_to_end(key)
-        self._hits += 1
-        return entry.value
+        with self._lock:
+            entry = self._store.get(key)
+            if entry is None:
+                self._misses += 1
+                return None
+            if time.time() > entry.expires_at:
+                del self._store[key]
+                self._misses += 1
+                return None
+            # Move to end (most recently used)
+            self._store.move_to_end(key)
+            self._hits += 1
+            return entry.value
 
     def set(self, key: str, value: Any, ttl: int) -> None:
-        if key in self._store:
-            self._store.move_to_end(key)
-        self._store[key] = _CacheEntry(value=value, expires_at=time.time() + ttl)
-        # Evict oldest entry if over capacity
-        while len(self._store) > self._max_size:
-            evicted_key, _ = self._store.popitem(last=False)
-            logger.debug("Cache evicted key: %s", evicted_key)
+        with self._lock:
+            if key in self._store:
+                self._store.move_to_end(key)
+            self._store[key] = _CacheEntry(value=value, expires_at=time.time() + ttl)
+            # Evict oldest entry if over capacity
+            while len(self._store) > self._max_size:
+                evicted_key, _ = self._store.popitem(last=False)
+                logger.debug("Cache evicted key: %s", evicted_key)
 
     def delete(self, key: str) -> None:
-        self._store.pop(key, None)
+        with self._lock:
+            self._store.pop(key, None)
 
     def invalidate_prefix(self, prefix: str) -> int:
         """Remove all entries whose key starts with prefix. Returns count removed."""
-        keys_to_remove = [k for k in self._store if k.startswith(prefix)]
-        for k in keys_to_remove:
-            del self._store[k]
-        return len(keys_to_remove)
+        with self._lock:
+            keys_to_remove = [k for k in self._store if k.startswith(prefix)]
+            for k in keys_to_remove:
+                del self._store[k]
+            return len(keys_to_remove)
 
     def stats(self) -> dict:
-        total = self._hits + self._misses
-        return {
-            "size": len(self._store),
-            "max_size": self._max_size,
-            "hits": self._hits,
-            "misses": self._misses,
-            "hit_rate": round(self._hits / total, 4) if total else 0.0,
-        }
+        """Return a point-in-time snapshot of cache statistics. Values may be stale after return."""
+        with self._lock:
+            total = self._hits + self._misses
+            return {
+                "size": len(self._store),
+                "max_size": self._max_size,
+                "hits": self._hits,
+                "misses": self._misses,
+                "hit_rate": round(self._hits / total, 4) if total else 0.0,
+            }
 
     def clear(self) -> None:
-        self._store.clear()
-        self._hits = 0
-        self._misses = 0
+        with self._lock:
+            self._store.clear()
+            self._hits = 0
+            self._misses = 0
 
 
 class AppCache:
