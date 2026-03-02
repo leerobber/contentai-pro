@@ -1,9 +1,9 @@
 """Application metrics — counters, histograms, and gauges."""
 import time
 import logging
-from collections import defaultdict
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, Deque, Optional
 
 logger = logging.getLogger("contentai")
 
@@ -15,27 +15,30 @@ except ImportError:
     _PROMETHEUS_AVAILABLE = False
     logger.info("prometheus_client not installed; using built-in metrics only.")
 
+# Maximum number of raw samples retained per histogram bucket to avoid unbounded memory growth
+_MAX_RESERVOIR_SIZE = 1000
+
 
 @dataclass
 class _HistogramBucket:
-    """Accumulates values for computing mean and percentiles."""
+    """Accumulates values for computing mean and percentiles using a bounded reservoir."""
     total: float = 0.0
     count: int = 0
-    values: List[float] = field(default_factory=list)
+    _reservoir: Deque = field(default_factory=lambda: deque(maxlen=_MAX_RESERVOIR_SIZE))
 
     def observe(self, value: float) -> None:
         self.total += value
         self.count += 1
-        self.values.append(value)
+        self._reservoir.append(value)
 
     @property
     def mean(self) -> float:
         return self.total / self.count if self.count else 0.0
 
     def percentile(self, p: float) -> float:
-        if not self.values:
+        if not self._reservoir:
             return 0.0
-        sorted_vals = sorted(self.values)
+        sorted_vals = sorted(self._reservoir)
         idx = int(len(sorted_vals) * p / 100)
         return sorted_vals[min(idx, len(sorted_vals) - 1)]
 

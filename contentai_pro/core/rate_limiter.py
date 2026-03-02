@@ -21,7 +21,6 @@ class RateLimitConfig:
     requests_per_minute: int = 60
     requests_per_hour: int = 1000
     burst_limit: int = 10       # max concurrent requests per client
-    max_pipelines: int = 5      # max concurrent pipelines globally
 
 
 @dataclass

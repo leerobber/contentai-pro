@@ -23,7 +23,7 @@ class _CacheEntry:
 
 
 class LRUCache:
-    """Thread-safe (asyncio-safe) LRU cache with per-entry TTL."""
+    """In-process LRU cache with per-entry TTL. Not thread-safe; designed for single-threaded asyncio use."""
 
     def __init__(self, max_size: int = 512):
         self._max_size = max_size

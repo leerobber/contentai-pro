@@ -1,9 +1,8 @@
 """Webhook support — async delivery with retry for pipeline completion events."""
-import json
 import logging
 import time
 import uuid
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -12,12 +11,8 @@ from tenacity import retry, stop_after_attempt, wait_exponential, before_log, re
 logger = logging.getLogger("contentai")
 
 
-@dataclass
-class WebhookConfig:
-    url: str
-    secret: Optional[str] = None          # Used for HMAC signing (future)
-    timeout_seconds: int = 10
-    max_retries: int = 3
+class WebhookDeliveryError(Exception):
+    """Raised when a webhook endpoint returns a retryable error (429 or 5xx)."""
 
 
 @dataclass
@@ -40,10 +35,6 @@ class WebhookPayload:
     latency_ms: float
     metadata: Dict[str, Any] = field(default_factory=dict)
     timestamp: float = field(default_factory=time.time)
-
-
-class WebhookDeliveryError(Exception):
-    pass
 
 
 class WebhookManager:
@@ -112,7 +103,7 @@ class WebhookManager:
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type((httpx.TimeoutException, httpx.ConnectError)),
+        retry=retry_if_exception_type((httpx.TimeoutException, httpx.ConnectError, WebhookDeliveryError)),
         before=before_log(logger, logging.WARNING),
         reraise=False,
     )
@@ -123,8 +114,15 @@ class WebhookManager:
                 json=data,
                 headers={"Content-Type": "application/json", "X-Source": "ContentAI-Pro"},
             )
+            if response.status_code == 429 or response.status_code >= 500:
+                # Retryable errors: rate-limited or server-side failure
+                raise WebhookDeliveryError(
+                    f"Webhook delivery failed with retryable status {response.status_code}: {url}"
+                )
             if response.status_code >= 400:
-                logger.warning("Webhook delivery failed (%s): %s", response.status_code, url)
+                # Non-retryable client error — log and skip
+                logger.warning("Webhook delivery failed (non-retryable %s): %s",
+                               response.status_code, url)
             else:
                 logger.debug("Webhook delivered to %s: %s", url, response.status_code)
 

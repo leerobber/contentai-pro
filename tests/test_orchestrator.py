@@ -31,9 +31,10 @@ def _make_mock_llm():
 
 @pytest.fixture(autouse=True)
 def _patch_db(monkeypatch):
-    """Patch db.save_content so tests don't need a real database."""
+    """Patch db.save_content and db.save_version so tests don't need a real database."""
     mock_db = MagicMock()
     mock_db.save_content = AsyncMock(return_value="test-content-id")
+    mock_db.save_version = AsyncMock(return_value="test-version-id")
 
     import contentai_pro.ai.orchestrator as orch_mod
     monkeypatch.setattr(orch_mod, "db", mock_db)
