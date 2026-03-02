@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ContentAI Pro — Multi-Agent Content Engine</title>
+    <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <div class="logo">
+                <span class="logo-icon">⚙</span>
+                <h1>ContentAI <span class="accent">Pro</span></h1>
+                <span class="version">v2.0</span>
+            </div>
+            <div class="header-status">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">Connecting...</span>
+            </div>
+        </header>
+
+        <nav class="tabs">
+            <button class="tab active" data-tab="generate">⚡ Generate</button>
+            <button class="tab" data-tab="debate">⚔ Debate</button>
+            <button class="tab" data-tab="atomize">🔬 Atomize</button>
+            <button class="tab" data-tab="dna">🧬 DNA</button>
+            <button class="tab" data-tab="trends">📡 Trends</button>
+        </nav>
+
+        <main class="content">
+            <!-- GENERATE TAB -->
+            <section class="panel active" id="tab-generate">
+                <div class="form-grid">
+                    <div class="form-group span-2">
+                        <label>Topic</label>
+                        <input type="text" id="genTopic" placeholder="e.g., How Multi-Agent AI Systems Are Revolutionizing Content Creation" />
+                    </div>
+                    <div class="form-group">
+                        <label>Content Type</label>
+                        <select id="genType">
+                            <option value="blog_post">Blog Post</option>
+                            <option value="article">Article</option>
+                            <option value="whitepaper">Whitepaper</option>
+                            <option value="case_study">Case Study</option>
+                            <option value="newsletter">Newsletter</option>
+                            <option value="landing_page">Landing Page</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Word Count</label>
+                        <input type="number" id="genWords" value="1200" min="300" max="5000" />
+                    </div>
+                    <div class="form-group">
+                        <label>Audience</label>
+                        <input type="text" id="genAudience" value="tech professionals" />
+                    </div>
+                    <div class="form-group">
+                        <label>Tone</label>
+                        <select id="genTone">
+                            <option value="professional yet approachable">Professional & Approachable</option>
+                            <option value="technical and precise">Technical & Precise</option>
+                            <option value="casual and conversational">Casual & Conversational</option>
+                            <option value="authoritative and data-driven">Authoritative & Data-Driven</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Keywords (comma-sep)</label>
+                        <input type="text" id="genKeywords" placeholder="AI, multi-agent, content" />
+                    </div>
+                    <div class="form-group toggle-row">
+                        <label><input type="checkbox" id="genDebate" checked /> Adversarial Debate</label>
+                        <label><input type="checkbox" id="genAtomize" checked /> Atomize (8 platforms)</label>
+                    </div>
+                    <div class="form-group">
+                        <button class="btn primary" onclick="runPipeline()">🚀 Run Full Pipeline</button>
+                        <button class="btn secondary" onclick="runQuick()">⚡ Quick Generate</button>
+                    </div>
+                </div>
+
+                <!-- Pipeline Progress -->
+                <div class="pipeline-tracker" id="pipelineTracker" style="display:none">
+                    <h3>Pipeline Progress</h3>
+                    <div class="stages">
+                        <div class="stage" id="stage-research"><span class="stage-icon">🔍</span> Research</div>
+                        <div class="stage" id="stage-write"><span class="stage-icon">✍</span> Write</div>
+                        <div class="stage" id="stage-edit"><span class="stage-icon">📝</span> Edit</div>
+                        <div class="stage" id="stage-seo"><span class="stage-icon">🔎</span> SEO</div>
+                        <div class="stage" id="stage-dna"><span class="stage-icon">🧬</span> DNA</div>
+                        <div class="stage" id="stage-debate"><span class="stage-icon">⚔</span> Debate</div>
+                        <div class="stage" id="stage-atomize"><span class="stage-icon">🔬</span> Atomize</div>
+                    </div>
+                </div>
+
+                <!-- Results -->
+                <div class="results" id="genResults" style="display:none">
+                    <div class="result-tabs">
+                        <button class="result-tab active" data-result="final">Final</button>
+                        <button class="result-tab" data-result="research">Research</button>
+                        <button class="result-tab" data-result="debate">Debate</button>
+                        <button class="result-tab" data-result="atomized">Atomized</button>
+                    </div>
+                    <div class="result-content" id="resultContent"></div>
+                    <div class="result-meta" id="resultMeta"></div>
+                </div>
+            </section>
+
+            <!-- DEBATE TAB -->
+            <section class="panel" id="tab-debate">
+                <div class="form-grid">
+                    <div class="form-group span-2">
+                        <label>Content to Debate</label>
+                        <textarea id="debateContent" rows="8" placeholder="Paste content for adversarial quality review..."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Topic</label>
+                        <input type="text" id="debateTopic" placeholder="Topic context" />
+                    </div>
+                    <div class="form-group">
+                        <button class="btn primary" onclick="runDebate()">⚔ Start Debate</button>
+                    </div>
+                </div>
+                <div class="results" id="debateResults" style="display:none"></div>
+            </section>
+
+            <!-- ATOMIZE TAB -->
+            <section class="panel" id="tab-atomize">
+                <div class="form-grid">
+                    <div class="form-group span-2">
+                        <label>Source Content</label>
+                        <textarea id="atomContent" rows="8" placeholder="Paste content to atomize into 8 platforms..."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Topic</label>
+                        <input type="text" id="atomTopic" placeholder="Topic context" />
+                    </div>
+                    <div class="form-group">
+                        <button class="btn primary" onclick="runAtomize()">🔬 Atomize</button>
+                    </div>
+                </div>
+                <div class="results" id="atomResults" style="display:none"></div>
+            </section>
+
+            <!-- DNA TAB -->
+            <section class="panel" id="tab-dna">
+                <div class="form-grid">
+                    <div class="form-group span-2">
+                        <label>Profile Name</label>
+                        <input type="text" id="dnaName" placeholder="e.g., my-brand-voice" />
+                    </div>
+                    <div class="form-group span-2">
+                        <label>Writing Samples (paste 3+ samples, separated by ---)</label>
+                        <textarea id="dnaSamples" rows="10" placeholder="Sample 1 text here...&#10;---&#10;Sample 2 text here...&#10;---&#10;Sample 3 text here..."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <button class="btn primary" onclick="calibrateDNA()">🧬 Calibrate DNA</button>
+                    </div>
+                </div>
+                <div class="results" id="dnaResults" style="display:none"></div>
+            </section>
+
+            <!-- TRENDS TAB -->
+            <section class="panel" id="tab-trends">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>Filter by Niche</label>
+                        <input type="text" id="trendNiche" placeholder="e.g., AI, python, web3" />
+                    </div>
+                    <div class="form-group">
+                        <button class="btn primary" onclick="fetchTrends()">📡 Scan Trends</button>
+                    </div>
+                </div>
+                <div class="results" id="trendResults" style="display:none"></div>
+            </section>
+        </main>
+    </div>
+    <script src="/js/app.js"></script>
+</body>
+</html>
