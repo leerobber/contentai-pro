@@ -1,4 +1,5 @@
 """LLM Adapter — unified interface for Anthropic / OpenAI / Mock."""
+import asyncio
 import json
 import logging
 import random
@@ -6,6 +7,18 @@ from typing import Optional, Dict, Any
 from contentai_pro.core.config import settings
 
 logger = logging.getLogger("contentai")
+
+
+class LLMError(Exception):
+    """Base exception for LLM errors."""
+
+
+class RateLimitError(LLMError):
+    """Raised when the LLM provider returns a rate-limit response."""
+
+
+class LLMTimeoutError(LLMError):
+    """Raised when an LLM request exceeds the configured timeout."""
 
 
 class LLMAdapter:
@@ -44,27 +57,58 @@ class LLMAdapter:
             self._provider = "mock"
 
     async def generate(self, system: str, prompt: str, max_tokens: int = None,
-                       temperature: float = None, json_mode: bool = False) -> str:
+                       temperature: float = None, json_mode: bool = False,
+                       _retries: int = 3, _backoff: float = 1.0) -> str:
         max_tokens = max_tokens or settings.MAX_TOKENS
         temperature = temperature if temperature is not None else settings.TEMPERATURE
 
-        if self._provider == "anthropic":
-            return await self._anthropic_generate(system, prompt, max_tokens, temperature)
-        elif self._provider == "openai":
-            return await self._openai_generate(system, prompt, max_tokens, temperature, json_mode)
-        else:
-            return await self._mock_generate(system, prompt, json_mode)
+        for attempt in range(1, _retries + 1):
+            try:
+                if self._provider == "anthropic":
+                    return await self._anthropic_generate(system, prompt, max_tokens, temperature)
+                elif self._provider == "openai":
+                    return await self._openai_generate(system, prompt, max_tokens, temperature, json_mode)
+                else:
+                    return await self._mock_generate(system, prompt, json_mode)
+            except RateLimitError:
+                if attempt == _retries:
+                    raise
+                wait = _backoff * (2 ** (attempt - 1))
+                logger.warning(f"Rate limited by {self._provider}; retrying in {wait:.1f}s (attempt {attempt}/{_retries})")
+                await asyncio.sleep(wait)
+            except LLMTimeoutError:
+                if attempt == _retries:
+                    raise
+                logger.warning(f"LLM timeout on attempt {attempt}/{_retries}; retrying")
+                await asyncio.sleep(_backoff)
 
     async def _anthropic_generate(self, system: str, prompt: str,
                                    max_tokens: int, temperature: float) -> str:
-        response = await self._client.messages.create(
-            model=settings.MODEL_NAME,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            system=system,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return response.content[0].text
+        try:
+            response = await self._client.messages.create(
+                model=settings.MODEL_NAME,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                system=system,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            return response.content[0].text
+        except Exception as exc:
+            # Prefer SDK-specific exception types; fall back to name-based detection.
+            try:
+                import anthropic
+                if isinstance(exc, anthropic.RateLimitError):
+                    raise RateLimitError(str(exc)) from exc
+                if isinstance(exc, anthropic.APITimeoutError):
+                    raise LLMTimeoutError(str(exc)) from exc
+            except ImportError:
+                pass
+            exc_name = type(exc).__name__.lower()
+            if "ratelimit" in exc_name or "rate_limit" in exc_name:
+                raise RateLimitError(str(exc)) from exc
+            if "timeout" in exc_name:
+                raise LLMTimeoutError(str(exc)) from exc
+            raise LLMError(str(exc)) from exc
 
     async def _openai_generate(self, system: str, prompt: str,
                                 max_tokens: int, temperature: float,
@@ -80,8 +124,25 @@ class LLMAdapter:
         }
         if json_mode:
             kwargs["response_format"] = {"type": "json_object"}
-        response = await self._client.chat.completions.create(**kwargs)
-        return response.choices[0].message.content
+        try:
+            response = await self._client.chat.completions.create(**kwargs)
+            return response.choices[0].message.content
+        except Exception as exc:
+            # Prefer SDK-specific exception types; fall back to name-based detection.
+            try:
+                import openai
+                if isinstance(exc, openai.RateLimitError):
+                    raise RateLimitError(str(exc)) from exc
+                if isinstance(exc, openai.APITimeoutError):
+                    raise LLMTimeoutError(str(exc)) from exc
+            except ImportError:
+                pass
+            exc_name = type(exc).__name__.lower()
+            if "ratelimit" in exc_name or "rate_limit" in exc_name:
+                raise RateLimitError(str(exc)) from exc
+            if "timeout" in exc_name:
+                raise LLMTimeoutError(str(exc)) from exc
+            raise LLMError(str(exc)) from exc
 
     async def _mock_generate(self, system: str, prompt: str, json_mode: bool = False) -> str:
         """Deterministic mock for UI testing without API keys."""

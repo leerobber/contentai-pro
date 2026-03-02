@@ -92,6 +92,7 @@ async def generate_full(req: GenerateRequest):
         "dna_score": result.dna_score,
         "debate": result.debate,
         "atomized": result.atomized,
+        "word_count": result.word_count,
         "latency_ms": round(result.total_latency_ms, 1),
     }
 
@@ -235,3 +236,10 @@ async def get_content(content_id: str):
     if not content:
         raise HTTPException(status_code=404, detail="Content not found")
     return content
+
+
+@router.get("")
+async def list_content(limit: int = 20, offset: int = 0):
+    """List generated content items ordered by most recent."""
+    items = await db.get_content_list(limit=limit, offset=offset)
+    return {"items": items, "limit": limit, "offset": offset, "page_count": len(items)}

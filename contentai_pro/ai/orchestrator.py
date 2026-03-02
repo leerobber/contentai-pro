@@ -42,6 +42,7 @@ class PipelineResult:
     debate: Optional[Dict] = None
     atomized: Optional[Dict] = None
     final_content: str = ""
+    word_count: int = 0
     total_latency_ms: float = 0.0
     metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -179,6 +180,7 @@ class Orchestrator:
 
         # ---------- Persist ----------
         result.stages_completed = stages_completed
+        result.word_count = len(result.final_content.split())
         result.total_latency_ms = (time.perf_counter() - t0) * 1000
         result.content_id = await db.save_content(
             topic=config.topic,
