@@ -66,7 +66,7 @@ class DNAScoreRequest(BaseModel):
 
 @router.post("/generate")
 async def generate_full(req: GenerateRequest):
-    """Full 7-stage pipeline: Research → Write → Edit → SEO → DNA → Debate → Atomize."""
+    """Full 9-stage pipeline: Research → Write → Fact-Check → Edit → SEO → Headline → DNA → Debate → Atomize."""
     config = PipelineConfig(
         topic=req.topic,
         content_type=req.content_type,
@@ -88,7 +88,9 @@ async def generate_full(req: GenerateRequest):
         "final_content": result.final_content,
         "research": result.research,
         "draft": result.draft,
+        "fact_check": result.fact_check,
         "seo_optimized": result.seo_optimized,
+        "headlines": result.headlines,
         "dna_score": result.dna_score,
         "debate": result.debate,
         "atomized": result.atomized,
