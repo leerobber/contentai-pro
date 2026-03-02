@@ -1,8 +1,11 @@
 """LLM Adapter — unified interface for Anthropic / OpenAI / Mock."""
 import json
+import logging
 import random
 from typing import Optional, Dict, Any
 from contentai_pro.core.config import settings
+
+logger = logging.getLogger("contentai")
 
 
 class LLMAdapter:
@@ -13,20 +16,31 @@ class LLMAdapter:
         self._client = None
         self._init_client()
 
+    @property
+    def provider(self) -> str:
+        """Return the active provider name."""
+        return self._provider
+
     def _init_client(self):
         if self._provider == "anthropic" and settings.ANTHROPIC_API_KEY:
             try:
                 import anthropic
                 self._client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
             except ImportError:
+                logger.warning("anthropic package not installed; falling back to mock mode.")
                 self._provider = "mock"
         elif self._provider == "openai" and settings.OPENAI_API_KEY:
             try:
                 import openai
                 self._client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
             except ImportError:
+                logger.warning("openai package not installed; falling back to mock mode.")
                 self._provider = "mock"
         else:
+            if self._provider != "mock":
+                logger.warning(
+                    f"LLM_PROVIDER='{self._provider}' but no API key is set; falling back to mock mode."
+                )
             self._provider = "mock"
 
     async def generate(self, system: str, prompt: str, max_tokens: int = None,

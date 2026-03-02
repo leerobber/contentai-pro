@@ -1,5 +1,7 @@
 """Settings — loaded from env / .env file."""
+import warnings
 from pydantic_settings import BaseSettings
+from pydantic import field_validator
 from typing import List
 
 
@@ -16,6 +18,10 @@ class Settings(BaseSettings):
     APP_NAME: str = "ContentAI Pro"
     DEBUG: bool = True
     SECRET_KEY: str = "change-me-in-production"
+    HOST: str = "0.0.0.0"
+    PORT: int = 8000
+    LOG_LEVEL: str = "info"
+    # SECURITY: restrict CORS_ORIGINS in production, e.g.: ["https://yourapp.com"]
     CORS_ORIGINS: List[str] = ["*"]
 
     # Database
@@ -38,6 +44,17 @@ class Settings(BaseSettings):
     # Trend Radar
     TREND_CACHE_TTL: int = 1800  # 30 min
     TREND_SOURCES: List[str] = ["hackernews", "reddit", "devto"]
+
+    @field_validator("SECRET_KEY")
+    @classmethod
+    def warn_default_secret(cls, v):
+        if v == "change-me-in-production":
+            warnings.warn(
+                "SECRET_KEY is set to the default value. Change it in production!",
+                UserWarning,
+                stacklevel=2,
+            )
+        return v
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
