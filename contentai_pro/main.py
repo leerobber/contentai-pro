@@ -3,6 +3,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import List
 from pathlib import Path
 
 from contentai_pro.core.config import settings
@@ -22,10 +24,15 @@ async def lifespan(app: FastAPI):
     await db.close()
 
 
+tags_metadata = [
+    {"name": "content", "description": "Content generation, debate, atomization, DNA, and trends."},
+]
+
 app = FastAPI(
     title="ContentAI Pro",
     version="2.0.0",
     description="Multi-agent AI content generation with DNA voice matching, adversarial debate, and platform atomization.",
+    openapi_tags=tags_metadata,
     lifespan=lifespan,
 )
 
@@ -43,15 +50,23 @@ app.add_middleware(
 app.include_router(content_router, prefix="/api/content", tags=["content"])
 
 
-@app.get("/api/health")
+class HealthResponse(BaseModel):
+    status: str
+    version: str
+    mode: str
+    agents: List[str]
+    features: List[str]
+
+
+@app.get("/api/health", response_model=HealthResponse)
 async def health():
-    return {
-        "status": "operational",
-        "version": "2.0.0",
-        "mode": settings.LLM_PROVIDER,
-        "agents": ["researcher", "writer", "editor", "seo", "debate", "atomizer"],
-        "features": ["dna_engine", "adversarial_debate", "content_atomizer", "trend_radar"],
-    }
+    return HealthResponse(
+        status="operational",
+        version="2.0.0",
+        mode=settings.LLM_PROVIDER,
+        agents=["researcher", "writer", "editor", "seo", "debate", "atomizer"],
+        features=["dna_engine", "adversarial_debate", "content_atomizer", "trend_radar"],
+    )
 
 
 # Static files — mount last

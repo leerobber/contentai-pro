@@ -110,6 +110,18 @@ class Database:
     async def close(self):
         if self._conn:
             await self._conn.close()
+            self._conn = None
+
+    async def get_content_list(self, limit: int = 20, offset: int = 0) -> list:
+        if not self._conn:
+            raise RuntimeError("Database is not initialized. Call init() first.")
+        cursor = await self._conn.execute(
+            "SELECT id, topic, content_type, stage, dna_score, debate_passed, created_at FROM content "
+            "ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            (limit, offset)
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
 
 
 db = Database()

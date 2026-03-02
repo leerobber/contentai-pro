@@ -35,7 +35,10 @@ class EventBus:
         # Drain all queues
         for queues in self._subscribers.values():
             for q in queues:
-                q.put_nowait(None)
+                try:
+                    q.put_nowait(None)
+                except asyncio.QueueFull:
+                    pass
 
     def new_pipeline_id(self) -> str:
         return str(uuid.uuid4())

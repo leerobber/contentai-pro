@@ -13,7 +13,12 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         request_id = str(uuid.uuid4())[:8]
         request.state.request_id = request_id
         start = time.perf_counter()
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+        except Exception as exc:
+            elapsed = (time.perf_counter() - start) * 1000
+            logger.error(f"[{request_id}] Unhandled exception after {elapsed:.0f}ms: {exc}", exc_info=True)
+            raise
         elapsed = (time.perf_counter() - start) * 1000
         logger.info(f"[{request_id}] {request.method} {request.url.path} → {response.status_code} ({elapsed:.0f}ms)")
         response.headers["X-Request-ID"] = request_id
