@@ -2,7 +2,7 @@
 import warnings
 from typing import Dict, List
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     # Per-agent model overrides (cheaper models for lower-stakes tasks).
     # NOTE: Keep this consistent with LLM_PROVIDER. By default, leave empty so
     # all agents use MODEL_NAME, and configure per-provider overrides via env/.env.
-    AGENT_MODELS: Dict[str, str] = {}
+    AGENT_MODELS: Dict[str, str] = Field(default_factory=dict)
 
     # App
     APP_NAME: str = "ContentAI Pro"

@@ -247,20 +247,20 @@ class DNAEngine:
         words = text.split()
 
         return {
-            "sentence_length_avg": sum(len(s.split()) for s in sentences) / max(len(sentences), 1),
-            "sentence_length_variance": self._variance([len(s.split()) for s in sentences]),
-            "vocabulary_tier": textstat.difficult_words(text) / max(len(words), 1),
-            "passive_voice_ratio": self._count_passive(text) / max(len(sentences), 1),
-            "question_frequency": text.count('?') / max(len(sentences), 1),
-            "metaphor_density": len(re.findall(r'\b(like|as if|as though)\b', text.lower())) / max(len(sentences), 1),
-            "technical_depth": textstat.avg_syllables_per_word(text),
-            "paragraph_rhythm": len(sentences) / max(text.count('\n\n') + 1, 1),
-            "transition_density": self._count_transitions(text) / max(len(sentences), 1),
-            "contraction_ratio": len(re.findall(r"\b\w+'\w+\b", text)) / max(len(words), 1),
-            "first_person_ratio": len(re.findall(r'\b(I|me|my|mine|we|us|our|ours)\b', text, re.I)) / max(len(words), 1),
-            "exclamation_energy": text.count('!') / max(len(sentences), 1),
-            "list_ratio": len(re.findall(r'^\s*[-*•\d]+[.)]?\s', text, re.MULTILINE)) / max(len(sentences), 1),
-            "opening_hook_score": self._score_opening_hook(sentences[0] if sentences else ""),
+            "sentence_length_avg": round(sum(len(s.split()) for s in sentences) / max(len(sentences), 1), 2),
+            "sentence_variance": round(self._variance([len(s.split()) for s in sentences]), 2),
+            "vocabulary_tier": round(textstat.difficult_words(text) / max(len(words), 1), 4),
+            "passive_voice_ratio": round(self._count_passive(text) / max(len(sentences), 1), 4),
+            "question_frequency": round(text.count('?') / max(len(sentences), 1) * 100, 2),
+            "metaphor_density": round(len(re.findall(r'\b(like|as if|as though)\b', text.lower())) / max(len(words), 1) * 1000, 2),
+            "technical_depth": round(textstat.avg_syllables_per_word(text), 4),
+            "paragraph_rhythm": round(len(sentences) / max(text.count('\n\n') + 1, 1), 2),
+            "transition_density": round(self._count_transitions(text) / max(len(words), 1) * 100, 2),
+            "contraction_ratio": round(len(re.findall(r"\b\w+'\w+\b", text)) / max(len(words), 1), 4),
+            "first_person_usage": round(len(re.findall(r'\b(I|me|my|mine|we|us|our|ours)\b', text, re.I)) / max(len(words), 1), 4),
+            "exclamation_energy": round(text.count('!') / max(len(words), 1) * 1000, 2),
+            "list_structure_ratio": round(len(re.findall(r'^\s*[-*•\d]+[.)]?\s', text, re.MULTILINE)) / max(len(sentences), 1), 4),
+            "opening_hook_style": round(self._score_opening_hook(sentences[0] if sentences else ""), 2),
         }
 
     def _variance(self, values: List[float]) -> float:

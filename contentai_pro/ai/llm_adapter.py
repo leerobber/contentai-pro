@@ -39,6 +39,7 @@ COST_TABLE = {
     "claude-3-opus-20240229": {"input": 0.015, "output": 0.075},
     "gpt-4o": {"input": 0.005, "output": 0.015},
     "gpt-4o-mini": {"input": 0.00015, "output": 0.0006},
+    "gpt-3.5-turbo": {"input": 0.0005, "output": 0.0015},
     "mock": {"input": 0.0, "output": 0.0},
 }
 
