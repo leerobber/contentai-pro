@@ -68,7 +68,7 @@ class DNAEngine:
         metaphor_density = (metaphor_markers / max(word_count, 1)) * 1000
 
         # Technical depth (words with mixed case, numbers, or special chars)
-        tech_words = sum(1 for w in words if re.search(r'[A-Z].*[a-z]|[a-z].*[A-Z]|\d', w))
+        tech_words = sum(1 for w in words if re.search(r'[A-Z][^a-z]*[a-z]|[a-z][^A-Z]*[A-Z]|\d', w))
         tech_depth = tech_words / max(word_count, 1)
 
         # Paragraph rhythm
