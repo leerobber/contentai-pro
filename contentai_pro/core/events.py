@@ -48,6 +48,30 @@ class EventBus:
         for q in self._subscribers.get(pipeline_id, []):
             await q.put(event)
 
+    def register(self, pipeline_id: str) -> asyncio.Queue:
+        """Synchronously register a subscription queue.
+
+        Call this BEFORE launching the pipeline task so no events are lost.
+        """
+        q: asyncio.Queue = asyncio.Queue()
+        self._subscribers[pipeline_id].append(q)
+        return q
+
+    async def listen(self, pipeline_id: str, q: asyncio.Queue) -> AsyncGenerator[PipelineEvent, None]:
+        """Consume events from a pre-registered queue (see `register`)."""
+        try:
+            while self._running:
+                event = await q.get()
+                if event is None:
+                    break
+                yield event
+                if event.status == "completed" and event.stage == "pipeline":
+                    break
+        finally:
+            self._subscribers[pipeline_id].remove(q)
+            if not self._subscribers[pipeline_id]:
+                del self._subscribers[pipeline_id]
+
     async def subscribe(self, pipeline_id: str) -> AsyncGenerator[PipelineEvent, None]:
         q: asyncio.Queue = asyncio.Queue()
         self._subscribers[pipeline_id].append(q)
