@@ -127,22 +127,23 @@ class Database:
 
     async def save_version(self, content_id: str, stage: str, body: str,
                             metadata: dict = None) -> str:
-        # Compute next version number for this content_id
-        cursor = await self._conn.execute(
-            "SELECT COALESCE(MAX(version_num), 0) + 1 FROM content_versions WHERE content_id = ?",
-            (content_id,)
-        )
-        row = await cursor.fetchone()
-        next_version = row[0] if row else 1
-        vid = str(uuid.uuid4())
-        now = datetime.now(timezone.utc).isoformat()
-        await self._conn.execute(
-            "INSERT INTO content_versions (id, content_id, stage, body, metadata, version_num, created_at) "
-            "VALUES (?,?,?,?,?,?,?)",
-            (vid, content_id, stage, body, json.dumps(metadata or {}), next_version, now)
-        )
-        await self._conn.commit()
-        return vid
+        async with self._write_lock:
+            # Compute next version number for this content_id
+            cursor = await self._conn.execute(
+                "SELECT COALESCE(MAX(version_num), 0) + 1 FROM content_versions WHERE content_id = ?",
+                (content_id,)
+            )
+            row = await cursor.fetchone()
+            next_version = row[0] if row else 1
+            vid = str(uuid.uuid4())
+            now = datetime.now(timezone.utc).isoformat()
+            await self._conn.execute(
+                "INSERT INTO content_versions (id, content_id, stage, body, metadata, version_num, created_at) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (vid, content_id, stage, body, json.dumps(metadata or {}), next_version, now)
+            )
+            await self._conn.commit()
+            return vid
 
     async def get_content_history(self, content_id: str) -> List[Dict]:
         cursor = await self._conn.execute(
