@@ -1,9 +1,9 @@
 """Content Atomizer — transforms one piece into platform-native variants.
 
-FIX: Parallelized with asyncio.gather (was serial — 7x latency reduction).
+FIX: Batch API call generates all platform variants in a single LLM request.
 FIX: Platform-aware truncation (sentence-boundary, not mid-word).
 """
-import asyncio
+import json
 import logging
 import re
 import time
@@ -172,21 +172,46 @@ class AtomizerEngine:
         platforms = platforms or settings.ATOMIZER_PLATFORMS
         valid_platforms = [p for p in platforms if p in PLATFORM_SPECS]
 
-        # Parallel execution — all platforms concurrently
-        tasks = [
-            self._atomize_single(p, source_content, topic)
+        # Build a single prompt requesting all platform variants at once
+        platform_instructions = "\n".join(
+            f"- {p.upper()}: {PLATFORM_SPECS[p]['prompt_hint']}"
             for p in valid_platforms
-        ]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        )
+        prompt = (
+            f"Generate content variants for ALL of the following platforms in one response.\n\n"
+            f"Platforms and instructions:\n{platform_instructions}\n\n"
+            f"Return as JSON with platform names as lowercase keys:\n"
+            f"{json.dumps({p: f'{p} content here...' for p in valid_platforms})}\n\n"
+            f"Original content to adapt:\n{source_content}\n\n"
+            f"Topic: {topic}"
+        )
+
+        raw = await llm.generate(ATOMIZER_SYSTEM, prompt, json_mode=True, agent_role="atomizer")
+
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            data = {p: raw for p in valid_platforms}
 
         variants = []
         errors = []
-        for platform, result in zip(valid_platforms, results):
-            if isinstance(result, Exception):
-                logger.error(f"Atomizer failed for {platform}: {result}")
-                errors.append({"platform": platform, "error": str(result)})
-            elif result is not None:
-                variants.append(result)
+        for platform in valid_platforms:
+            content = data.get(platform)
+            if content is None:
+                errors.append({"platform": platform, "error": "Missing from batch response"})
+                continue
+
+            spec = PLATFORM_SPECS[platform]
+            if spec["max_chars"] and len(content) > spec["max_chars"]:
+                content = _smart_truncate(content, spec["max_chars"], platform)
+
+            variants.append(AtomizedVariant(
+                platform=platform,
+                content=content,
+                format=spec["format"],
+                char_count=len(content),
+                metadata={"max_chars": spec["max_chars"]},
+            ))
 
         return AtomizerResult(
             source_topic=topic,

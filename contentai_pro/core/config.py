@@ -1,6 +1,6 @@
 """Settings — loaded from env / .env file."""
 import warnings
-from typing import List
+from typing import Dict, List
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
@@ -14,6 +14,22 @@ class Settings(BaseSettings):
     MODEL_NAME: str = "claude-sonnet-4-20250514"
     MAX_TOKENS: int = 4096
     TEMPERATURE: float = 0.7
+
+    # Per-agent model overrides (cheaper models for lower-stakes tasks)
+    AGENT_MODELS: Dict[str, str] = {
+        "research": "gpt-3.5-turbo",
+        "writer": "claude-sonnet-4-20250514",
+        "editor": "claude-sonnet-4-20250514",
+        "seo": "gpt-3.5-turbo",
+        "fact_checker": "gpt-3.5-turbo",
+        "headline": "gpt-3.5-turbo",
+        "advocate": "claude-sonnet-4-20250514",
+        "critic": "claude-sonnet-4-20250514",
+        "judge": "claude-sonnet-4-20250514",
+        "atomizer": "gpt-3.5-turbo",
+        "dna": "gpt-3.5-turbo",
+        "trends": "gpt-3.5-turbo",
+    }
 
     # App
     APP_NAME: str = "ContentAI Pro"
@@ -36,8 +52,8 @@ class Settings(BaseSettings):
     DNA_DIMENSIONS: int = 14
 
     # Debate
-    DEBATE_MAX_ROUNDS: int = 3
-    DEBATE_PASS_THRESHOLD: float = 7.5
+    DEBATE_MAX_ROUNDS: int = 2  # Reduced from 3 for cost efficiency
+    DEBATE_PASS_THRESHOLD: float = 7.0  # Reduced from 7.5 for earlier exits
 
     # Atomizer
     ATOMIZER_PLATFORMS: List[str] = [

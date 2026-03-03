@@ -32,7 +32,7 @@ async def test_generate_retries_on_rate_limit():
 
     call_count = 0
 
-    async def flaky_mock(system, prompt, json_mode=False):
+    async def flaky_mock(system, prompt, json_mode=False, agent_role=None):
         nonlocal call_count
         call_count += 1
         if call_count < 2:
@@ -52,7 +52,7 @@ async def test_generate_raises_after_max_retries():
     adapter = LLMAdapter()
     adapter._provider = "mock"
 
-    async def always_rate_limit(system, prompt, json_mode=False):
+    async def always_rate_limit(system, prompt, json_mode=False, agent_role=None):
         raise RateLimitError("always limited")
 
     with patch.object(adapter, "_mock_generate", side_effect=always_rate_limit):
@@ -68,7 +68,7 @@ async def test_generate_retries_on_timeout():
 
     call_count = 0
 
-    async def timeout_then_ok(system, prompt, json_mode=False):
+    async def timeout_then_ok(system, prompt, json_mode=False, agent_role=None):
         nonlocal call_count
         call_count += 1
         if call_count < 2:
@@ -90,7 +90,7 @@ async def test_generate_does_not_retry_generic_llm_error():
 
     call_count = 0
 
-    async def generic_error(system, prompt, json_mode=False):
+    async def generic_error(system, prompt, json_mode=False, agent_role=None):
         nonlocal call_count
         call_count += 1
         raise LLMError("unexpected error")

@@ -113,8 +113,8 @@ class DebateEngine:
                 f"Identify every weakness, gap, and area for improvement. Be specific."
             )
 
-            advocate_task = llm.generate(ADVOCATE_SYSTEM, advocate_prompt, temperature=0.5)
-            critic_task = llm.generate(CRITIC_SYSTEM, critic_prompt, temperature=0.5)
+            advocate_task = llm.generate(ADVOCATE_SYSTEM, advocate_prompt, temperature=0.5, agent_role="advocate")
+            critic_task = llm.generate(CRITIC_SYSTEM, critic_prompt, temperature=0.5, agent_role="critic")
             advocate_arg, critic_arg = await asyncio.gather(advocate_task, critic_task)
 
             # Judge (sequential — depends on both arguments)
@@ -124,7 +124,7 @@ class DebateEngine:
                 f"**Critic's Case:**\n{critic_arg}\n\n"
                 f"Score 1-10 and return JSON verdict."
             )
-            judge_raw = await llm.generate(JUDGE_SYSTEM, judge_prompt, temperature=0.2)
+            judge_raw = await llm.generate(JUDGE_SYSTEM, judge_prompt, temperature=0.2, agent_role="judge")
             verdict = _extract_json(judge_raw)
 
             dr = DebateRound(
@@ -155,7 +155,7 @@ class DebateEngine:
                 )
                 current_content = await llm.generate(
                     "You are an expert content reviser. Improve the content based on specific feedback.",
-                    revision_prompt, temperature=0.4
+                    revision_prompt, temperature=0.4, agent_role="writer"
                 )
 
         final_score = rounds[-1].judge_score if rounds else 0

@@ -3,7 +3,9 @@ import time
 from typing import Any, Dict
 
 from contentai_pro.ai.agents.base import AgentResult, BaseAgent
+from contentai_pro.ai.cache import semantic_cache
 from contentai_pro.ai.llm_adapter import llm
+from contentai_pro.core.config import settings
 
 
 class ResearchAgent(BaseAgent):
@@ -26,7 +28,12 @@ class ResearchAgent(BaseAgent):
             f"Produce a comprehensive research brief with data points, trends, competitive analysis, "
             f"and recommended angles. Include at least 5 concrete statistics or data points."
         )
-        output = await llm.generate(self.system_prompt, prompt)
+        output = await semantic_cache.get_or_generate(
+            self.system_prompt,
+            prompt,
+            lambda: llm.generate(self.system_prompt, prompt, agent_role="research"),
+            ttl=settings.TREND_CACHE_TTL,
+        )
         return AgentResult(
             agent=self.name, output=output,
             latency_ms=(time.perf_counter() - t0) * 1000,
@@ -64,7 +71,7 @@ class WriterAgent(BaseAgent):
             f"Produce publication-ready content with a compelling headline, strong opening hook, "
             f"clear structure, and actionable takeaways."
         )
-        output = await llm.generate(self.system_prompt, prompt)
+        output = await llm.generate(self.system_prompt, prompt, agent_role="writer")
         return AgentResult(
             agent=self.name, output=output,
             latency_ms=(time.perf_counter() - t0) * 1000,
@@ -92,7 +99,7 @@ class EditorAgent(BaseAgent):
             f"Return the complete edited version. Maintain the original structure but improve "
             f"clarity, flow, and impact. Fix any factual or logical issues."
         )
-        output = await llm.generate(self.system_prompt, prompt, temperature=0.3)
+        output = await llm.generate(self.system_prompt, prompt, temperature=0.3, agent_role="editor")
         return AgentResult(
             agent=self.name, output=output,
             latency_ms=(time.perf_counter() - t0) * 1000,
@@ -127,7 +134,7 @@ class SEOAgent(BaseAgent):
             f"4. Internal link suggestions\n"
             f"5. Readability score assessment"
         )
-        output = await llm.generate(self.system_prompt, prompt, temperature=0.2)
+        output = await llm.generate(self.system_prompt, prompt, temperature=0.2, agent_role="seo")
         return AgentResult(
             agent=self.name, output=output,
             latency_ms=(time.perf_counter() - t0) * 1000,
@@ -160,7 +167,7 @@ class FactCheckerAgent(BaseAgent):
             f"3. MISSING context (important facts from research not used in draft)\n"
             f"4. Overall accuracy rating (Excellent / Good / Needs Revision)"
         )
-        output = await llm.generate(self.system_prompt, prompt, temperature=0.1)
+        output = await llm.generate(self.system_prompt, prompt, temperature=0.1, agent_role="fact_checker")
         return AgentResult(
             agent=self.name, output=output,
             latency_ms=(time.perf_counter() - t0) * 1000,
@@ -197,7 +204,7 @@ class HeadlineAgent(BaseAgent):
             f"5. Bold Statement — confident, contrarian, or provocative\n\n"
             f"Format each as: [Formula]: Headline — (brief rationale)"
         )
-        output = await llm.generate(self.system_prompt, prompt, temperature=0.8)
+        output = await llm.generate(self.system_prompt, prompt, temperature=0.8, agent_role="headline")
         return AgentResult(
             agent=self.name, output=output,
             latency_ms=(time.perf_counter() - t0) * 1000,

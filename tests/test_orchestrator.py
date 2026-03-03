@@ -12,7 +12,12 @@ def _make_mock_llm():
     import json
     mock = MagicMock()
 
-    async def _gen(system, prompt, max_tokens=None, temperature=None, json_mode=False):
+    async def _gen(system, prompt, max_tokens=None, temperature=None, json_mode=False,
+                   agent_role=None):
+        if agent_role == "atomizer":
+            platforms = ["twitter", "linkedin", "instagram", "email",
+                         "reddit", "youtube", "tiktok", "podcast"]
+            return json.dumps({p: f"[Mock {p} content]" for p in platforms})
         if json_mode or "judge" in system.lower() or "json" in system.lower():
             return json.dumps({
                 "score": 8.0,

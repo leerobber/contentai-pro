@@ -121,21 +121,23 @@ class LLMAdapter:
 
     async def generate(self, system: str, prompt: str, max_tokens: int = None,
                        temperature: float = None, json_mode: bool = False,
+                       agent_role: str = None,
                        _retries: int = None, _backoff: float = None) -> str:
         max_tokens = max_tokens or settings.MAX_TOKENS
         temperature = temperature if temperature is not None else settings.TEMPERATURE
         max_tries = _retries if _retries is not None else MAX_RETRIES
         base_delay = _backoff if _backoff is not None else RETRY_BASE_DELAY
+        model = settings.AGENT_MODELS.get(agent_role, settings.MODEL_NAME) if agent_role else settings.MODEL_NAME
 
         last_error = None
         for attempt in range(max_tries):
             try:
                 if self._provider == "anthropic":
-                    return await self._anthropic_generate(system, prompt, max_tokens, temperature)
+                    return await self._anthropic_generate(system, prompt, max_tokens, temperature, model)
                 elif self._provider == "openai":
-                    return await self._openai_generate(system, prompt, max_tokens, temperature, json_mode)
+                    return await self._openai_generate(system, prompt, max_tokens, temperature, json_mode, model)
                 else:
-                    return await self._mock_generate(system, prompt, json_mode)
+                    return await self._mock_generate(system, prompt, json_mode, agent_role)
             except Exception as e:
                 last_error = e
                 # Only retry transient errors (rate limits, timeouts, transient connectivity).
@@ -165,9 +167,11 @@ class LLMAdapter:
             run_usage.record(input_tokens, output_tokens, model)
 
     async def _anthropic_generate(self, system: str, prompt: str,
-                                   max_tokens: int, temperature: float) -> str:
+                                   max_tokens: int, temperature: float,
+                                   model: str = None) -> str:
+        model = model or settings.MODEL_NAME
         response = await self._client.messages.create(
-            model=settings.MODEL_NAME,
+            model=model,
             max_tokens=max_tokens,
             temperature=temperature,
             system=system,
@@ -176,14 +180,15 @@ class LLMAdapter:
         # Track tokens
         input_tokens = getattr(response.usage, 'input_tokens', 0)
         output_tokens = getattr(response.usage, 'output_tokens', 0)
-        self._record_usage(input_tokens, output_tokens, settings.MODEL_NAME)
+        self._record_usage(input_tokens, output_tokens, model)
         return response.content[0].text
 
     async def _openai_generate(self, system: str, prompt: str,
                                 max_tokens: int, temperature: float,
-                                json_mode: bool) -> str:
+                                json_mode: bool, model: str = None) -> str:
+        model = model or settings.MODEL_NAME
         kwargs = {
-            "model": settings.MODEL_NAME,
+            "model": model,
             "max_tokens": max_tokens,
             "temperature": temperature,
             "messages": [
@@ -199,18 +204,21 @@ class LLMAdapter:
             self._record_usage(
                 response.usage.prompt_tokens,
                 response.usage.completion_tokens,
-                settings.MODEL_NAME,
+                model,
             )
         return response.choices[0].message.content
 
-    async def _mock_generate(self, system: str, prompt: str, json_mode: bool = False) -> str:
+    async def _mock_generate(self, system: str, prompt: str, json_mode: bool = False,
+                              agent_role: str = None) -> str:
         """Deterministic mock for UI testing without API keys."""
         # Estimate mock tokens for tracking
         input_tokens = len(prompt.split()) + len(system.split())
         prompt_lower = prompt.lower()
 
         # Check specific agent roles FIRST (some contain "json" in their prompts)
-        if "advocate" in system.lower():
+        if agent_role == "atomizer":
+            result = self._mock_atomizer(prompt_lower)
+        elif "advocate" in system.lower():
             result = self._mock_advocate()
         elif "critic" in system.lower():
             result = self._mock_critic()
@@ -232,6 +240,13 @@ class LLMAdapter:
         output_tokens = len(result.split())
         self._record_usage(input_tokens, output_tokens, "mock")
         return result
+
+    def _mock_atomizer(self, prompt: str) -> str:
+        platforms = [
+            "twitter", "linkedin", "instagram", "email",
+            "reddit", "youtube", "tiktok", "podcast",
+        ]
+        return json.dumps({p: f"[Mock {p} content]" for p in platforms})
 
     def _mock_research(self, prompt: str) -> str:
         return (

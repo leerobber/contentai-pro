@@ -9,7 +9,8 @@ def _make_judge_mock(score=8.0, verdict="pass"):
     """Return a mock LLM whose generate() always returns a valid judge JSON."""
     mock = MagicMock()
 
-    async def _gen(system, prompt, max_tokens=None, temperature=None, json_mode=False):
+    async def _gen(system, prompt, max_tokens=None, temperature=None, json_mode=False,
+                   agent_role=None):
         return json.dumps({
             "score": score,
             "verdict": verdict,
@@ -118,7 +119,8 @@ async def test_multi_round_revision(monkeypatch):
 
     call_count = 0
 
-    async def _gen_revise(system, prompt, max_tokens=None, temperature=None, json_mode=False):
+    async def _gen_revise(system, prompt, max_tokens=None, temperature=None, json_mode=False,
+                          agent_role=None):
         nonlocal call_count
         call_count += 1
         # First call: revise; subsequent calls: pass
