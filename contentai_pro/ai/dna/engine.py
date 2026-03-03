@@ -1,10 +1,24 @@
-"""Content DNA Engine — 14-dimension voice fingerprinting for style consistency."""
+"""Content DNA Engine — multi-layered voice fingerprinting for style consistency.
+
+Layers
+------
+Macro DNA   : Persistent brand voice (consistent across all content types).
+Micro DNA   : Format-specific patterns keyed by content_type.
+Temporal DNA: Chronological snapshots for evolution/drift tracking.
+Contextual DNA: Industry- or audience-specific adaptations.
+"""
 import re
 import json
 import math
+import uuid
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional
+from datetime import datetime, timezone
+from enum import Enum
+from typing import List, Dict, Optional, Tuple
 from contentai_pro.core.config import settings
+
+_EPSILON = 1e-9           # Guard against division by zero in drift computation
+_MIN_SCORE_DIVISOR = 1e-6  # Minimum denominator for score similarity computation
 
 
 # The 14 DNA dimensions
@@ -26,15 +40,57 @@ DNA_DIMENSIONS = [
 ]
 
 
+class DNALayer(str, Enum):
+    MACRO = "macro"          # Brand-wide voice constants
+    MICRO = "micro"          # Format-specific (blog, thread, email …)
+    TEMPORAL = "temporal"    # Historical snapshot for drift detection
+    CONTEXTUAL = "contextual"  # Industry / audience adaptation
+
+
+@dataclass
+class DNAVersion:
+    """Immutable snapshot of a fingerprint at a point in time."""
+    version_id: str
+    layer: DNALayer
+    fingerprint: Dict[str, float]
+    label: str = ""           # e.g. "v1", "blog_variant_A"
+    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
+@dataclass
+class DriftAlert:
+    profile_name: str
+    dimension: str
+    baseline: float
+    current: float
+    delta_pct: float          # % change vs baseline
+    threshold_pct: float
+    exceeded: bool
+
+
 @dataclass
 class DNAProfile:
     name: str
-    fingerprint: Dict[str, float] = field(default_factory=dict)
+    fingerprint: Dict[str, float] = field(default_factory=dict)   # Macro baseline
     samples_count: int = 0
+    # Multi-layer storage
+    macro_dna: Dict[str, float] = field(default_factory=dict)
+    micro_dna: Dict[str, Dict[str, float]] = field(default_factory=dict)   # keyed by content_type
+    contextual_dna: Dict[str, Dict[str, float]] = field(default_factory=dict)  # keyed by context key
+    versions: List[DNAVersion] = field(default_factory=list)
+    drift_threshold_pct: float = 20.0  # Alert when dimension drifts > this %
 
 
 class DNAEngine:
-    """Analyzes writing samples to build a voice fingerprint, then scores new content for consistency."""
+    """Analyzes writing samples to build a multi-layered voice fingerprint.
+
+    Layers
+    ------
+    Macro  — brand-wide constants calibrated from all samples.
+    Micro  — per-format patterns (blog, thread, email …).
+    Temporal — chronological snapshots for drift detection.
+    Contextual — industry/audience-specific adaptations.
+    """
 
     def __init__(self):
         self.profiles: Dict[str, DNAProfile] = {}
@@ -140,24 +196,231 @@ class DNAEngine:
             values = [fp[dim] for fp in fingerprints]
             avg_fp[dim] = round(sum(values) / len(values), 4)
 
-        profile = DNAProfile(name=name, fingerprint=avg_fp, samples_count=len(samples))
+        if name not in self.profiles:
+            profile = DNAProfile(name=name, fingerprint=avg_fp, samples_count=len(samples))
+        else:
+            profile = self.profiles[name]
+            profile.fingerprint = avg_fp
+            profile.samples_count = len(samples)
+
+        profile.macro_dna = avg_fp
+
+        # Create initial temporal snapshot
+        version = DNAVersion(
+            version_id=str(uuid.uuid4()),
+            layer=DNALayer.TEMPORAL,
+            fingerprint=dict(avg_fp),
+            label=f"v{len(profile.versions) + 1}",
+        )
+        profile.versions.append(version)
+
         self.profiles[name] = profile
         return profile
 
-    def score(self, text: str, profile_name: str) -> Dict:
-        """Score how closely a text matches a DNA profile. Returns 0-100."""
+    def calibrate_layer(
+        self,
+        name: str,
+        samples: List[str],
+        layer: DNALayer,
+        context_key: str = "",
+    ) -> DNAProfile:
+        """Calibrate a specific DNA layer for an existing profile.
+
+        Parameters
+        ----------
+        name        : Profile name (must already exist or will be created).
+        samples     : Writing samples representative of this layer.
+        layer       : Which layer to calibrate.
+        context_key : Required for MICRO (content_type) and CONTEXTUAL (context key).
+        """
+        if len(samples) < 1:
+            raise ValueError("Need at least 1 sample to calibrate a layer.")
+
+        fingerprints = [self.analyze_sample(s) for s in samples]
+        avg_fp: Dict[str, float] = {}
+        for dim in DNA_DIMENSIONS:
+            values = [fp[dim] for fp in fingerprints]
+            avg_fp[dim] = round(sum(values) / len(values), 4)
+
+        if name not in self.profiles:
+            self.profiles[name] = DNAProfile(name=name)
+        profile = self.profiles[name]
+
+        if layer == DNALayer.MACRO:
+            profile.macro_dna = avg_fp
+            profile.fingerprint = avg_fp
+            profile.samples_count = max(profile.samples_count, len(samples))
+        elif layer == DNALayer.MICRO:
+            if not context_key:
+                raise ValueError("context_key (content_type) is required for MICRO layer.")
+            profile.micro_dna[context_key] = avg_fp
+            profile.samples_count = max(profile.samples_count, len(samples))
+        elif layer == DNALayer.CONTEXTUAL:
+            if not context_key:
+                raise ValueError("context_key is required for CONTEXTUAL layer.")
+            profile.contextual_dna[context_key] = avg_fp
+            profile.samples_count = max(profile.samples_count, len(samples))
+        elif layer == DNALayer.TEMPORAL:
+            version = DNAVersion(
+                version_id=str(uuid.uuid4()),
+                layer=DNALayer.TEMPORAL,
+                fingerprint=dict(avg_fp),
+                label=context_key or f"v{len(profile.versions) + 1}",
+            )
+            profile.versions.append(version)
+            profile.samples_count = max(profile.samples_count, len(samples))
+
+        return profile
+
+    def create_version(self, name: str, label: str = "", layer: DNALayer = DNALayer.MACRO,
+                       context_key: str = "") -> DNAVersion:
+        """Snapshot the fingerprint for the given layer as a named version for A/B testing.
+
+        Parameters
+        ----------
+        name        : Profile name (must exist).
+        label       : Human-readable label for the version.
+        layer       : Which layer fingerprint to snapshot.
+        context_key : Required for MICRO/CONTEXTUAL layers.
+        """
+        if name not in self.profiles:
+            raise ValueError(f"Profile '{name}' not found.")
+        profile = self.profiles[name]
+
+        if layer == DNALayer.MICRO:
+            if not context_key:
+                raise ValueError("context_key is required to snapshot a MICRO layer version.")
+            fp = dict(profile.micro_dna.get(context_key, profile.macro_dna or profile.fingerprint))
+        elif layer == DNALayer.CONTEXTUAL:
+            if not context_key:
+                raise ValueError("context_key is required to snapshot a CONTEXTUAL layer version.")
+            fp = dict(profile.contextual_dna.get(context_key, profile.macro_dna or profile.fingerprint))
+        else:
+            # MACRO and TEMPORAL both snapshot the macro (brand-wide) fingerprint
+            fp = dict(profile.macro_dna or profile.fingerprint)
+
+        version = DNAVersion(
+            version_id=str(uuid.uuid4()),
+            layer=layer,
+            fingerprint=fp,
+            label=label or f"v{len(profile.versions) + 1}",
+        )
+        profile.versions.append(version)
+        return version
+
+    def interpolate(self, profile_a: str, profile_b: str, weight_a: float = 0.5,
+                    new_name: str = "") -> DNAProfile:
+        """Blend two DNA profiles into a hybrid voice.
+
+        Parameters
+        ----------
+        profile_a, profile_b : Names of existing profiles to blend.
+        weight_a             : Weight for profile A (0-1). Profile B gets (1 - weight_a).
+        new_name             : Name for the blended profile.
+        """
+        if profile_a not in self.profiles:
+            raise ValueError(f"Profile '{profile_a}' not found.")
+        if profile_b not in self.profiles:
+            raise ValueError(f"Profile '{profile_b}' not found.")
+        if not 0.0 <= weight_a <= 1.0:
+            raise ValueError("weight_a must be between 0 and 1.")
+
+        fp_a = self.profiles[profile_a].fingerprint
+        fp_b = self.profiles[profile_b].fingerprint
+        weight_b = 1.0 - weight_a
+
+        blended: Dict[str, float] = {}
+        for dim in DNA_DIMENSIONS:
+            blended[dim] = round(fp_a.get(dim, 0) * weight_a + fp_b.get(dim, 0) * weight_b, 4)
+
+        blended_name = new_name or f"{profile_a}+{profile_b}"
+        new_profile = DNAProfile(
+            name=blended_name,
+            fingerprint=blended,
+            macro_dna=blended,
+            samples_count=self.profiles[profile_a].samples_count + self.profiles[profile_b].samples_count,
+        )
+        self.profiles[blended_name] = new_profile
+        return new_profile
+
+    def detect_drift(self, text: str, profile_name: str,
+                     baseline_version_idx: int = 0) -> List[DriftAlert]:
+        """Compare text fingerprint to the profile baseline and return drift alerts.
+
+        Parameters
+        ----------
+        text                 : New content to test.
+        profile_name         : Profile to compare against.
+        baseline_version_idx : Index into versions list to use as baseline
+                               (0 = earliest snapshot). Must be >= 0. Falls back to macro_dna.
+        """
+        if baseline_version_idx < 0:
+            raise ValueError("baseline_version_idx must be >= 0.")
+        if profile_name not in self.profiles:
+            return []
+        profile = self.profiles[profile_name]
+        threshold = profile.drift_threshold_pct
+
+        # Determine baseline fingerprint
+        if profile.versions and baseline_version_idx < len(profile.versions):
+            baseline_fp = profile.versions[baseline_version_idx].fingerprint
+        else:
+            baseline_fp = profile.macro_dna or profile.fingerprint
+
+        current_fp = self.analyze_sample(text)
+        alerts: List[DriftAlert] = []
+
+        for dim in DNA_DIMENSIONS:
+            baseline_val = baseline_fp.get(dim, 0)
+            current_val = current_fp.get(dim, 0)
+            denom = abs(baseline_val) if abs(baseline_val) > _EPSILON else _EPSILON
+            delta_pct = abs(current_val - baseline_val) / denom * 100
+            alerts.append(DriftAlert(
+                profile_name=profile_name,
+                dimension=dim,
+                baseline=baseline_val,
+                current=current_val,
+                delta_pct=round(delta_pct, 1),
+                threshold_pct=threshold,
+                exceeded=delta_pct > threshold,
+            ))
+
+        return alerts
+
+    def score(self, text: str, profile_name: str,
+              layer: DNALayer = DNALayer.MACRO,
+              content_type: str = "") -> Dict:
+        """Score how closely a text matches a DNA profile layer. Returns 0-100.
+
+        Parameters
+        ----------
+        layer        : Which layer fingerprint to score against.
+        content_type : Required when layer=MICRO; used as the micro_dna key.
+        """
         if profile_name not in self.profiles:
             return {"error": f"Profile '{profile_name}' not found", "score": 0}
 
         profile = self.profiles[profile_name]
+
+        # Select the target fingerprint based on layer
+        if layer == DNALayer.MICRO and content_type and content_type in profile.micro_dna:
+            target_fp = profile.micro_dna[content_type]
+        elif layer == DNALayer.CONTEXTUAL and content_type and content_type in profile.contextual_dna:
+            target_fp = profile.contextual_dna[content_type]
+        else:
+            target_fp = profile.macro_dna or profile.fingerprint
+
+        if not target_fp:
+            return {"error": f"Profile '{profile_name}' has no fingerprint data", "score": 0}
+
         current = self.analyze_sample(text)
 
         # Compute per-dimension similarity (1 - normalized distance)
         dim_scores = {}
         for dim in DNA_DIMENSIONS:
-            target = profile.fingerprint.get(dim, 0)
+            target = target_fp.get(dim, 0)
             actual = current.get(dim, 0)
-            max_val = max(abs(target), abs(actual), 1e-6)
+            max_val = max(abs(target), abs(actual), _MIN_SCORE_DIVISOR)
             similarity = 1.0 - min(abs(target - actual) / max_val, 1.0)
             dim_scores[dim] = round(similarity * 100, 1)
 
@@ -167,16 +430,18 @@ class DNAEngine:
             "overall_score": overall,
             "dimension_scores": dim_scores,
             "profile_name": profile_name,
+            "layer": layer.value,
             "samples_analyzed": profile.samples_count,
             "current_fingerprint": current,
-            "target_fingerprint": profile.fingerprint,
+            "target_fingerprint": target_fp,
         }
 
     def get_profile_summary(self, profile_name: str) -> Optional[str]:
         """Generate a natural-language description of a DNA profile for agent prompts."""
         if profile_name not in self.profiles:
             return None
-        fp = self.profiles[profile_name].fingerprint
+        profile = self.profiles[profile_name]
+        fp = profile.macro_dna or profile.fingerprint
         parts = []
         if fp.get("sentence_length_avg", 0) > 20:
             parts.append("long, complex sentences")
@@ -192,7 +457,16 @@ class DNAEngine:
             parts.append("rich use of metaphors and analogies")
         if fp.get("question_frequency", 0) > 10:
             parts.append("frequent rhetorical questions")
-        return f"Voice profile: {', '.join(parts)}." if parts else "Neutral professional voice."
+        base = f"Voice profile: {', '.join(parts)}." if parts else "Neutral professional voice."
+
+        extras = []
+        if profile.micro_dna:
+            extras.append(f"format-specific micro-layers: {', '.join(profile.micro_dna.keys())}")
+        if profile.versions:
+            extras.append(f"{len(profile.versions)} temporal snapshot(s)")
+        if extras:
+            base += f" ({'; '.join(extras)})"
+        return base
 
 
 # Singleton

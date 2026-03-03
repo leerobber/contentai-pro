@@ -88,7 +88,7 @@ class LLMAdapter:
         prompt_lower = prompt.lower()
 
         if json_mode or "json" in system.lower():
-            return self._mock_json(prompt_lower)
+            return self._mock_json(prompt_lower, system.lower())
 
         if "research" in system.lower():
             return self._mock_research(prompt_lower)
@@ -185,7 +185,53 @@ class LLMAdapter:
             "revision_notes": "Convert passive constructions. Add 1-2 customer quotes. End with clear next step."
         })
 
-    def _mock_json(self, prompt: str) -> str:
+    def _mock_json(self, prompt: str, system: str = "") -> str:
+        score = round(random.uniform(7.0, 9.2), 1)
+        # Board critic responses
+        if "seo critic" in system or "seo" in system:
+            return json.dumps({
+                "score": round(random.uniform(7.0, 9.0), 1),
+                "confidence": round(random.uniform(0.7, 0.95), 2),
+                "verdict": "pass",
+                "notes": "Keywords integrated naturally. Title tag is optimized. Meta description needs more urgency.",
+            })
+        if "engagement critic" in system or "engagement" in system:
+            return json.dumps({
+                "score": round(random.uniform(7.5, 9.2), 1),
+                "confidence": round(random.uniform(0.7, 0.9), 2),
+                "verdict": "pass",
+                "notes": "Strong hook and shareable insights. CTA could be more specific.",
+            })
+        if "brand safety" in system or "brand_safety" in system:
+            return json.dumps({
+                "score": round(random.uniform(8.5, 9.8), 1),
+                "confidence": round(random.uniform(0.85, 0.99), 2),
+                "verdict": "pass",
+                "notes": "No compliance risks identified. All claims are appropriately hedged.",
+            })
+        if "technical" in system and "critic" in system:
+            return json.dumps({
+                "score": round(random.uniform(7.0, 8.8), 1),
+                "confidence": round(random.uniform(0.65, 0.85), 2),
+                "verdict": "pass",
+                "notes": "Statistics are plausible. Benchmark reference for 2.3x claim should be cited.",
+            })
+        if "audience proxy" in system or "audience" in system:
+            return json.dumps({
+                "score": round(random.uniform(7.5, 9.0), 1),
+                "confidence": round(random.uniform(0.7, 0.9), 2),
+                "verdict": "pass",
+                "notes": "Content matches reader expectations. Opening may lose casual readers.",
+            })
+        if "meta-judge" in system or "meta_judge" in system or "meta judge" in system:
+            return json.dumps({
+                "final_score": score,
+                "verdict": "pass" if score >= 7.5 else "revise",
+                "revision_notes": "Minor improvements: cite benchmark, sharpen CTA.",
+                "weight_rationale": "Brand safety and audience proxy scores weighted highest.",
+            })
+        if "judge" in system:
+            return self._mock_judge()
         return json.dumps({
             "result": "mock_json_response",
             "quality_score": 8.2,
