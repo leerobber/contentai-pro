@@ -5,7 +5,7 @@ Research → Writer → Editor → SEO → DNA Score → Debate → Atomizer
 import asyncio
 import logging
 import time
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, Any, Optional, List
 
@@ -13,7 +13,7 @@ from contentai_pro.ai.agents.specialists import ResearchAgent, WriterAgent, Edit
 from contentai_pro.ai.agents.debate import debate_engine, DebateResult
 from contentai_pro.ai.dna.engine import dna_engine
 from contentai_pro.ai.atomizer.engine import atomizer_engine, AtomizerResult
-from contentai_pro.core.events import event_bus, PipelineEvent
+from contentai_pro.core.events import event_bus
 from contentai_pro.core.database import db
 
 logger = logging.getLogger("contentai")

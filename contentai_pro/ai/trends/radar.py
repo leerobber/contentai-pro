@@ -2,7 +2,7 @@
 import time
 import asyncio
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict
+from typing import List, Optional
 from datetime import datetime, timezone
 
 try:

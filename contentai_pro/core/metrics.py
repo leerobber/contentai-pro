@@ -1,5 +1,4 @@
 """Application metrics — counters, histograms, and gauges."""
-import time
 import logging
 from collections import defaultdict, deque
 from dataclasses import dataclass, field

@@ -1,24 +1,19 @@
 """Content API Router — Full pipeline, quick gen, debate, atomize, DNA, trends."""
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
-from dataclasses import asdict
+from pydantic import BaseModel
+from typing import List, Optional
 
 from contentai_pro.ai.orchestrator import orchestrator, PipelineConfig
 from contentai_pro.ai.agents.debate import debate_engine
 from contentai_pro.ai.atomizer.engine import atomizer_engine
 from contentai_pro.ai.dna.engine import dna_engine
 from contentai_pro.ai.trends.radar import trend_radar
-from contentai_pro.ai.llm_adapter import llm
 from contentai_pro.core.events import event_bus
 from contentai_pro.core.database import db
 from contentai_pro.modules.content.schemas import (
     GenerateRequest,
     DNACalibrateRequest,
-    ContentType,
-    ToneType,
-    Platform,
 )
 
 router = APIRouter()

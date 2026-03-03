@@ -2,7 +2,6 @@
 import json
 import logging
 import random
-from typing import Optional, Dict, Any
 from contentai_pro.core.config import settings
 from tenacity import (
     retry,
