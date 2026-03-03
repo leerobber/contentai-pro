@@ -3,14 +3,12 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
-from dataclasses import asdict
 
 from contentai_pro.ai.orchestrator import orchestrator, PipelineConfig
 from contentai_pro.ai.agents.debate import debate_engine
 from contentai_pro.ai.atomizer.engine import atomizer_engine, PerformanceRecord
 from contentai_pro.ai.dna.engine import dna_engine, DNALayer
 from contentai_pro.ai.trends.radar import trend_radar
-from contentai_pro.ai.llm_adapter import llm
 from contentai_pro.core.events import event_bus
 from contentai_pro.core.database import db
 
@@ -323,6 +321,8 @@ async def calibrate_dna_layer(req: DNALayerCalibrateRequest):
             profile.macro_dna if layer == DNALayer.MACRO
             else profile.micro_dna.get(req.context_key, {})
             if layer == DNALayer.MICRO
+            else profile.versions[-1].fingerprint
+            if layer == DNALayer.TEMPORAL
             else profile.contextual_dna.get(req.context_key, {})
         ),
         "versions_count": len(profile.versions),
@@ -394,12 +394,12 @@ class AtomizeVariantsRequest(BaseModel):
 
 
 class PerformanceRecordRequest(BaseModel):
-    platform: str
+    platform: str = Field(..., min_length=1)
     content_id: str
-    impressions: int = 0
-    clicks: int = 0
-    shares: int = 0
-    comments: int = 0
+    impressions: int = Field(default=0, ge=0)
+    clicks: int = Field(default=0, ge=0)
+    shares: int = Field(default=0, ge=0)
+    comments: int = Field(default=0, ge=0)
 
 
 @router.post("/atomize/variants")

@@ -254,10 +254,12 @@ class DNAEngine:
             if not context_key:
                 raise ValueError("context_key (content_type) is required for MICRO layer.")
             profile.micro_dna[context_key] = avg_fp
+            profile.samples_count = max(profile.samples_count, len(samples))
         elif layer == DNALayer.CONTEXTUAL:
             if not context_key:
                 raise ValueError("context_key is required for CONTEXTUAL layer.")
             profile.contextual_dna[context_key] = avg_fp
+            profile.samples_count = max(profile.samples_count, len(samples))
         elif layer == DNALayer.TEMPORAL:
             version = DNAVersion(
                 version_id=str(uuid.uuid4()),
@@ -266,15 +268,37 @@ class DNAEngine:
                 label=context_key or f"v{len(profile.versions) + 1}",
             )
             profile.versions.append(version)
+            profile.samples_count = max(profile.samples_count, len(samples))
 
         return profile
 
-    def create_version(self, name: str, label: str = "", layer: DNALayer = DNALayer.MACRO) -> DNAVersion:
-        """Snapshot the current macro fingerprint as a named version for A/B testing."""
+    def create_version(self, name: str, label: str = "", layer: DNALayer = DNALayer.MACRO,
+                       context_key: str = "") -> DNAVersion:
+        """Snapshot the fingerprint for the given layer as a named version for A/B testing.
+
+        Parameters
+        ----------
+        name        : Profile name (must exist).
+        label       : Human-readable label for the version.
+        layer       : Which layer fingerprint to snapshot.
+        context_key : Required for MICRO/CONTEXTUAL layers.
+        """
         if name not in self.profiles:
             raise ValueError(f"Profile '{name}' not found.")
         profile = self.profiles[name]
-        fp = dict(profile.macro_dna or profile.fingerprint)
+
+        if layer == DNALayer.MICRO:
+            if not context_key:
+                raise ValueError("context_key is required to snapshot a MICRO layer version.")
+            fp = dict(profile.micro_dna.get(context_key, profile.macro_dna or profile.fingerprint))
+        elif layer == DNALayer.CONTEXTUAL:
+            if not context_key:
+                raise ValueError("context_key is required to snapshot a CONTEXTUAL layer version.")
+            fp = dict(profile.contextual_dna.get(context_key, profile.macro_dna or profile.fingerprint))
+        else:
+            # MACRO and TEMPORAL both snapshot the macro (brand-wide) fingerprint
+            fp = dict(profile.macro_dna or profile.fingerprint)
+
         version = DNAVersion(
             version_id=str(uuid.uuid4()),
             layer=layer,
@@ -328,8 +352,10 @@ class DNAEngine:
         text                 : New content to test.
         profile_name         : Profile to compare against.
         baseline_version_idx : Index into versions list to use as baseline
-                               (0 = earliest snapshot). Falls back to macro_dna.
+                               (0 = earliest snapshot). Must be >= 0. Falls back to macro_dna.
         """
+        if baseline_version_idx < 0:
+            raise ValueError("baseline_version_idx must be >= 0.")
         if profile_name not in self.profiles:
             return []
         profile = self.profiles[profile_name]

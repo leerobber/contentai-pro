@@ -69,6 +69,25 @@ class TestDNALayers:
         profile = engine.profiles["brand"]
         assert "finance" in profile.contextual_dna
 
+    def test_calibrate_layer_updates_samples_count_for_micro(self):
+        engine = DNAEngine()
+        engine.calibrate("brand", SAMPLES)
+        initial_count = engine.profiles["brand"].samples_count
+        engine.calibrate_layer("brand", [SAMPLE_B, SAMPLE_C], DNALayer.MICRO, context_key="twitter")
+        assert engine.profiles["brand"].samples_count >= initial_count
+
+    def test_calibrate_layer_updates_samples_count_for_contextual(self):
+        engine = DNAEngine()
+        engine.calibrate("brand", SAMPLES)
+        engine.calibrate_layer("brand", [SAMPLE_C, SAMPLE_A], DNALayer.CONTEXTUAL, context_key="finance")
+        assert engine.profiles["brand"].samples_count >= 2
+
+    def test_calibrate_layer_updates_samples_count_for_temporal(self):
+        engine = DNAEngine()
+        engine.calibrate("brand", SAMPLES)
+        engine.calibrate_layer("brand", [SAMPLE_A, SAMPLE_B, SAMPLE_C], DNALayer.TEMPORAL)
+        assert engine.profiles["brand"].samples_count >= 3
+
     def test_micro_layer_requires_context_key(self):
         engine = DNAEngine()
         engine.calibrate("brand", SAMPLES)
@@ -122,6 +141,28 @@ class TestDNAVersioning:
         engine.create_version("brand", label="v2")
         engine.create_version("brand", label="v3")
         assert len(engine.profiles["brand"].versions) == 3  # 1 from calibrate + 2 explicit
+
+    def test_create_version_micro_layer_requires_context_key(self):
+        engine = DNAEngine()
+        engine.calibrate("brand", SAMPLES)
+        engine.calibrate_layer("brand", [SAMPLE_B], DNALayer.MICRO, context_key="twitter")
+        with pytest.raises(ValueError, match="context_key"):
+            engine.create_version("brand", layer=DNALayer.MICRO)
+
+    def test_create_version_micro_layer_snapshots_micro_fingerprint(self):
+        engine = DNAEngine()
+        engine.calibrate("brand", SAMPLES)
+        engine.calibrate_layer("brand", [SAMPLE_B], DNALayer.MICRO, context_key="twitter")
+        v = engine.create_version("brand", label="twitter_v1", layer=DNALayer.MICRO, context_key="twitter")
+        assert v.layer == DNALayer.MICRO
+        assert len(v.fingerprint) == 14
+
+    def test_create_version_contextual_layer_requires_context_key(self):
+        engine = DNAEngine()
+        engine.calibrate("brand", SAMPLES)
+        engine.calibrate_layer("brand", [SAMPLE_C], DNALayer.CONTEXTUAL, context_key="finance")
+        with pytest.raises(ValueError, match="context_key"):
+            engine.create_version("brand", layer=DNALayer.CONTEXTUAL)
 
 
 class TestDNAInterpolation:
@@ -179,6 +220,12 @@ class TestDNADriftDetection:
         engine = DNAEngine()
         alerts = engine.detect_drift(SAMPLE_A, "ghost")
         assert alerts == []
+
+    def test_detect_drift_negative_index_raises(self):
+        engine = DNAEngine()
+        engine.calibrate("brand", SAMPLES)
+        with pytest.raises(ValueError, match="baseline_version_idx"):
+            engine.detect_drift(SAMPLE_A, "brand", baseline_version_idx=-1)
 
     def test_drift_alert_fields(self):
         engine = DNAEngine()

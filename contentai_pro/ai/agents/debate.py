@@ -262,11 +262,18 @@ class DebateEngine:
                 f"**Content to evaluate:**\n{current_content}\n\n"
                 f"Provide your expert evaluation."
             )
-            raw = await llm.generate(system, prompt, temperature=0.3, json_mode=True)
-            try:
-                parsed = json.loads(raw)
-            except json.JSONDecodeError:
-                parsed = {"score": 7.0, "confidence": 0.5, "verdict": "revise", "notes": "parse error"}
+            # The Content Advocate produces natural-language analysis, not JSON.
+            # Do not force json_mode for that member; treat its raw output as notes.
+            use_json_mode = member_name != "content_advocate"
+            raw = await llm.generate(system, prompt, temperature=0.3, json_mode=use_json_mode)
+            if use_json_mode:
+                try:
+                    parsed = json.loads(raw)
+                except json.JSONDecodeError:
+                    parsed = {"score": 7.0, "confidence": 0.5, "verdict": "revise", "notes": "parse error"}
+            else:
+                # For the advocate, default to reasonable values and keep the full text as notes.
+                parsed = {"score": 7.0, "confidence": 0.7, "verdict": "revise", "notes": raw}
 
             score = float(parsed.get("score", 7.0))
             confidence = float(parsed.get("confidence", 0.7))
@@ -341,7 +348,7 @@ class DebateEngine:
         final_score = float(meta.get("final_score", weighted_score))
         meta_verdict = meta.get("verdict", "revise")
         revision_notes = meta.get("revision_notes", "")
-        passed = final_score >= self.pass_threshold and meta_verdict != "fail"
+        passed = final_score >= self.pass_threshold and meta_verdict == "pass"
 
         transcript.append({
             "agent": "meta_judge",

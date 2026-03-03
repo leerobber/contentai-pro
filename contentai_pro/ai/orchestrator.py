@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional, List
 
 from contentai_pro.ai.agents.specialists import ResearchAgent, WriterAgent, EditorAgent, SEOAgent
 from contentai_pro.ai.agents.debate import debate_engine, DebateResult, BoardDebateResult
-from contentai_pro.ai.dna.engine import dna_engine, DNALayer
+from contentai_pro.ai.dna.engine import dna_engine
 from contentai_pro.ai.atomizer.engine import atomizer_engine, AtomizerResult
 from contentai_pro.core.events import event_bus, PipelineEvent
 from contentai_pro.core.database import db

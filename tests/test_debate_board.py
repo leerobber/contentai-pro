@@ -149,6 +149,17 @@ class TestBoardDebateEngine:
         assert result.passed is False
 
     @pytest.mark.asyncio
+    async def test_run_board_not_passed_when_verdict_is_revise(self, monkeypatch):
+        """A high score with a 'revise' meta-verdict must not pass."""
+        mock = _make_mock_llm(score=8.5, verdict="revise")
+        from contentai_pro.ai.agents import debate as debate_mod
+        monkeypatch.setattr(debate_mod.llm, "generate", mock)
+
+        engine = DebateEngine()
+        result = await engine.run_board(SAMPLE_CONTENT, "AI content")
+        assert result.passed is False
+
+    @pytest.mark.asyncio
     async def test_run_board_handles_json_parse_error(self, monkeypatch):
         """Board should degrade gracefully when an agent returns invalid JSON."""
         call_count = 0
