@@ -1,10 +1,19 @@
-"""Adversarial Debate — Advocate defends, Critic attacks, Judge scores."""
+"""Adversarial Debate — Advocate defends, Critic attacks, Judge scores.
+
+FIX: Advocate + Critic run in parallel (independent LLM calls).
+FIX: Robust JSON extraction from Judge response (handles markdown fences).
+"""
 import json
+import re
 import time
+import asyncio
+import logging
 from dataclasses import dataclass, field
 from typing import List, Optional
 from contentai_pro.ai.llm_adapter import llm
 from contentai_pro.core.config import settings
+
+logger = logging.getLogger("contentai")
 
 
 @dataclass
@@ -49,6 +58,37 @@ JUDGE_SYSTEM = (
 )
 
 
+def _extract_json(raw: str) -> Dict[str, Any]:
+    """Extract JSON from LLM response, handling markdown fences and preamble."""
+    # Strip markdown code fences
+    cleaned = re.sub(r'```json\s*', '', raw)
+    cleaned = re.sub(r'```\s*', '', cleaned)
+    cleaned = cleaned.strip()
+
+    # Try direct parse
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        pass
+
+    # Try to find JSON object in the text
+    match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', cleaned)
+    if match:
+        try:
+            return json.loads(match.group())
+        except json.JSONDecodeError:
+            pass
+
+    # Fallback
+    return {
+        "score": 7.0,
+        "verdict": "revise",
+        "strengths": [],
+        "weaknesses": [],
+        "revision_notes": "Parse error — manual review recommended.",
+    }
+
+
 class DebateEngine:
     """Multi-round adversarial debate for content quality assurance."""
 
@@ -62,21 +102,21 @@ class DebateEngine:
         current_content = content
 
         for r in range(1, self.max_rounds + 1):
-            # Advocate
+            # Advocate + Critic in PARALLEL (independent prompts)
             advocate_prompt = (
                 f"Defend this {content_type} on '{topic}':\n\n{current_content}\n\n"
                 f"Make the strongest case for why this content is publication-ready."
             )
-            advocate_arg = await llm.generate(ADVOCATE_SYSTEM, advocate_prompt, temperature=0.5)
-
-            # Critic
             critic_prompt = (
                 f"Critique this {content_type} on '{topic}':\n\n{current_content}\n\n"
                 f"Identify every weakness, gap, and area for improvement. Be specific."
             )
-            critic_arg = await llm.generate(CRITIC_SYSTEM, critic_prompt, temperature=0.5)
 
-            # Judge
+            advocate_task = llm.generate(ADVOCATE_SYSTEM, advocate_prompt, temperature=0.5)
+            critic_task = llm.generate(CRITIC_SYSTEM, critic_prompt, temperature=0.5)
+            advocate_arg, critic_arg = await asyncio.gather(advocate_task, critic_task)
+
+            # Judge (sequential — depends on both arguments)
             judge_prompt = (
                 f"Content under review ({content_type} on '{topic}'):\n\n{current_content}\n\n"
                 f"---\n\n**Advocate's Case:**\n{advocate_arg}\n\n"
@@ -84,12 +124,7 @@ class DebateEngine:
                 f"Score 1-10 and return JSON verdict."
             )
             judge_raw = await llm.generate(JUDGE_SYSTEM, judge_prompt, temperature=0.2)
-
-            # Parse judge
-            try:
-                verdict = json.loads(judge_raw)
-            except json.JSONDecodeError:
-                verdict = {"score": 7.0, "verdict": "revise", "strengths": [], "weaknesses": [], "revision_notes": "Parse error — manual review recommended."}
+            verdict = _extract_json(judge_raw)
 
             dr = DebateRound(
                 round_num=r,

@@ -1,39 +1,81 @@
-"""LLM Adapter — unified interface for Anthropic / OpenAI / Mock."""
-import asyncio
+"""LLM Adapter — unified interface for Anthropic / OpenAI / Mock.
+
+FIX: Token counting + cost estimation per call.
+FIX: Retry logic with exponential backoff for transient failures.
+"""
 import json
 import logging
 import random
+import asyncio
+from contextvars import ContextVar
+from dataclasses import dataclass, field
+from typing import Optional, Dict, Any, List
 from contentai_pro.core.config import settings
-from tenacity import (
-    retry,
-    stop_after_attempt,
-    wait_exponential,
-    retry_if_exception_type,
-    before_log,
-)
 
 logger = logging.getLogger("contentai")
 
+# Per-run usage tracking — set by Orchestrator.run() via contextvars so concurrent
+# requests each accumulate their own token/cost totals without interfering.
+_run_usage_var: ContextVar[Optional["LLMUsage"]] = ContextVar("_run_usage_var", default=None)
 
-# ---------------------------------------------------------------------------
-# Custom exceptions
-# ---------------------------------------------------------------------------
 
 class LLMError(Exception):
-    """Base exception for LLM adapter errors."""
+    """Base exception for LLM errors."""
 
 
 class RateLimitError(LLMError):
-    """Raised when the LLM provider returns a rate-limit response."""
+    """Raised when the LLM API returns a rate-limit response."""
 
 
 class LLMTimeoutError(LLMError):
-    """Raised when an LLM request times out."""
+    """Raised when an LLM API call times out (avoids shadowing built-in TimeoutError)."""
 
 
-# ---------------------------------------------------------------------------
-# Adapter
-# ---------------------------------------------------------------------------
+# Cost per 1K tokens (input/output) — updated as pricing changes
+COST_TABLE = {
+    "claude-sonnet-4-20250514": {"input": 0.003, "output": 0.015},
+    "claude-3-5-sonnet-20241022": {"input": 0.003, "output": 0.015},
+    "claude-3-opus-20240229": {"input": 0.015, "output": 0.075},
+    "gpt-4o": {"input": 0.005, "output": 0.015},
+    "gpt-4o-mini": {"input": 0.00015, "output": 0.0006},
+    "mock": {"input": 0.0, "output": 0.0},
+}
+
+MAX_RETRIES = 3
+RETRY_BASE_DELAY = 1.0  # seconds
+
+
+@dataclass
+class LLMUsage:
+    """Tracks cumulative token usage and costs across a session."""
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    total_cost_usd: float = 0.0
+    total_calls: int = 0
+    call_log: List[Dict[str, Any]] = field(default_factory=list)
+
+    def record(self, input_tokens: int, output_tokens: int, model: str):
+        self.total_input_tokens += input_tokens
+        self.total_output_tokens += output_tokens
+        self.total_calls += 1
+        costs = COST_TABLE.get(model, COST_TABLE.get("mock", {"input": 0.0, "output": 0.0}))
+        call_cost = (input_tokens / 1000 * costs["input"]) + (output_tokens / 1000 * costs["output"])
+        self.total_cost_usd += call_cost
+        self.call_log.append({
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "cost_usd": round(call_cost, 6),
+            "model": model,
+        })
+
+    def summary(self) -> Dict[str, Any]:
+        return {
+            "total_calls": self.total_calls,
+            "total_input_tokens": self.total_input_tokens,
+            "total_output_tokens": self.total_output_tokens,
+            "total_tokens": self.total_input_tokens + self.total_output_tokens,
+            "estimated_cost_usd": round(self.total_cost_usd, 4),
+        }
 
 
 class LLMAdapter:
@@ -42,7 +84,7 @@ class LLMAdapter:
     def __init__(self):
         self._provider = settings.LLM_PROVIDER
         self._client = None
-        self._request_count: int = 0
+        self.usage = LLMUsage()
         self._init_client()
 
     @property
@@ -50,10 +92,9 @@ class LLMAdapter:
         """Return the active provider name."""
         return self._provider
 
-    @property
-    def request_count(self) -> int:
-        """Return the total number of LLM requests made."""
-        return self._request_count
+    def reset_usage(self):
+        """Reset usage tracking (call at start of each pipeline run)."""
+        self.usage = LLMUsage()
 
     def _init_client(self):
         if self._provider == "anthropic" and settings.ANTHROPIC_API_KEY:
@@ -78,14 +119,12 @@ class LLMAdapter:
             self._provider = "mock"
 
     async def generate(self, system: str, prompt: str, max_tokens: int = None,
-                       temperature: float = None, json_mode: bool = False,
-                       _retries: int = 3, _backoff: float = 1.0) -> str:
+                       temperature: float = None, json_mode: bool = False) -> str:
         max_tokens = max_tokens or settings.MAX_TOKENS
         temperature = temperature if temperature is not None else settings.TEMPERATURE
-        self._request_count += 1
-        logger.debug("LLM request #%d via %s", self._request_count, self._provider)
 
-        for attempt in range(1, _retries + 1):
+        last_error = None
+        for attempt in range(MAX_RETRIES):
             try:
                 if self._provider == "anthropic":
                     return await self._anthropic_generate(system, prompt, max_tokens, temperature)
@@ -93,60 +132,50 @@ class LLMAdapter:
                     return await self._openai_generate(system, prompt, max_tokens, temperature, json_mode)
                 else:
                     return await self._mock_generate(system, prompt, json_mode)
-            except RateLimitError:
-                if attempt == _retries:
+            except Exception as e:
+                last_error = e
+                if self._provider == "mock":
+                    raise  # Mock shouldn't fail; if it does, it's a code bug
+                # Only retry transient errors (rate limits, timeouts, transient connectivity).
+                # Unrecoverable errors (auth failures, bad requests) are re-raised immediately.
+                error_name = type(e).__name__
+                is_transient = (
+                    isinstance(e, (RateLimitError, LLMTimeoutError))
+                    or "RateLimit" in error_name
+                    or "Timeout" in error_name
+                    or "ServiceUnavailable" in error_name
+                    or "APIConnection" in error_name
+                )
+                if not is_transient:
                     raise
-                wait = _backoff * (2 ** (attempt - 1))
-                logger.warning(f"Rate limited by {self._provider}; retrying in {wait:.1f}s (attempt {attempt}/{_retries})")
+                wait = RETRY_BASE_DELAY * (2 ** attempt) + random.uniform(0, 0.5)
+                logger.warning(f"LLM call failed (attempt {attempt + 1}/{MAX_RETRIES}): {e}. Retrying in {wait:.1f}s")
                 await asyncio.sleep(wait)
-            except LLMTimeoutError:
-                if attempt == _retries:
-                    raise
-                logger.warning(f"LLM timeout on attempt {attempt}/{_retries}; retrying")
-                await asyncio.sleep(_backoff)
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type((RateLimitError, LLMTimeoutError)),
-        before=before_log(logger, logging.WARNING),
-        reraise=True,
-    )
+        raise RuntimeError(f"LLM call failed after {MAX_RETRIES} retries: {last_error}") from last_error
+
+    def _record_usage(self, input_tokens: int, output_tokens: int, model: str) -> None:
+        """Record token usage to the singleton tracker and, if set, the per-run tracker."""
+        self.usage.record(input_tokens, output_tokens, model)
+        run_usage = _run_usage_var.get()
+        if run_usage is not None:
+            run_usage.record(input_tokens, output_tokens, model)
+
     async def _anthropic_generate(self, system: str, prompt: str,
                                    max_tokens: int, temperature: float) -> str:
-        try:
-            response = await self._client.messages.create(
-                model=settings.MODEL_NAME,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                system=system,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            return response.content[0].text
-        except Exception as exc:
-            # Prefer SDK-specific exception types; fall back to name-based detection.
-            try:
-                import anthropic
-                if isinstance(exc, anthropic.RateLimitError):
-                    raise RateLimitError(str(exc)) from exc
-                if isinstance(exc, anthropic.APITimeoutError):
-                    raise LLMTimeoutError(str(exc)) from exc
-            except ImportError:
-                pass
-            exc_name = type(exc).__name__.lower()
-            if "ratelimit" in exc_name or "rate_limit" in exc_name:
-                raise RateLimitError(str(exc)) from exc
-            if "timeout" in exc_name:
-                raise LLMTimeoutError(str(exc)) from exc
-            raise LLMError(str(exc)) from exc
+        response = await self._client.messages.create(
+            model=settings.MODEL_NAME,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            system=system,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        # Track tokens
+        input_tokens = getattr(response.usage, 'input_tokens', 0)
+        output_tokens = getattr(response.usage, 'output_tokens', 0)
+        self._record_usage(input_tokens, output_tokens, settings.MODEL_NAME)
+        return response.content[0].text
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type((RateLimitError, LLMTimeoutError)),
-        before=before_log(logger, logging.WARNING),
-        reraise=True,
-    )
     async def _openai_generate(self, system: str, prompt: str,
                                 max_tokens: int, temperature: float,
                                 json_mode: bool) -> str:
@@ -161,57 +190,45 @@ class LLMAdapter:
         }
         if json_mode:
             kwargs["response_format"] = {"type": "json_object"}
-        try:
-            response = await self._client.chat.completions.create(**kwargs)
-            return response.choices[0].message.content
-        except Exception as exc:
-            # Prefer SDK-specific exception types; fall back to name-based detection.
-            try:
-                import openai
-                if isinstance(exc, openai.RateLimitError):
-                    raise RateLimitError(str(exc)) from exc
-                if isinstance(exc, openai.APITimeoutError):
-                    raise LLMTimeoutError(str(exc)) from exc
-            except ImportError:
-                pass
-            exc_name = type(exc).__name__.lower()
-            if "ratelimit" in exc_name or "rate_limit" in exc_name:
-                raise RateLimitError(str(exc)) from exc
-            if "timeout" in exc_name:
-                raise LLMTimeoutError(str(exc)) from exc
-            raise LLMError(str(exc)) from exc
+        response = await self._client.chat.completions.create(**kwargs)
+        # Track tokens
+        if response.usage:
+            self._record_usage(
+                response.usage.prompt_tokens,
+                response.usage.completion_tokens,
+                settings.MODEL_NAME,
+            )
+        return response.choices[0].message.content
 
     async def _mock_generate(self, system: str, prompt: str, json_mode: bool = False) -> str:
         """Deterministic mock for UI testing without API keys."""
+        # Estimate mock tokens for tracking
+        input_tokens = len(prompt.split()) + len(system.split())
         prompt_lower = prompt.lower()
 
-        if json_mode or "json" in system.lower():
-            return self._mock_json(prompt_lower)
-
-        if "meticulous fact-checker" in system.lower():
-            return self._mock_fact_check()
-        if "headline" in system.lower() or "copywriter" in system.lower():
-            return self._mock_headlines()
-        if "research" in system.lower():
-            return self._mock_research(prompt_lower)
-        if "write" in system.lower() or "draft" in system.lower():
-            return self._mock_article(prompt_lower)
-        if "edit" in system.lower():
-            return self._mock_edit(prompt_lower)
-        if "seo" in system.lower():
-            return self._mock_seo(prompt_lower)
+        # Check specific agent roles FIRST (some contain "json" in their prompts)
         if "advocate" in system.lower():
-            return self._mock_advocate()
-        if "critic" in system.lower():
-            return self._mock_critic()
-        if "judge" in system.lower():
-            return self._mock_judge()
-        if "reviser" in system.lower() or "revise" in system.lower():
-            return self._mock_revise(prompt_lower)
-        if "platform" in system.lower() or "adaptation" in system.lower():
-            return self._mock_platform_variant(prompt_lower)
+            result = self._mock_advocate()
+        elif "critic" in system.lower():
+            result = self._mock_critic()
+        elif "judge" in system.lower():
+            result = self._mock_judge()
+        elif "research" in system.lower():
+            result = self._mock_research(prompt_lower)
+        elif "write" in system.lower() or "draft" in system.lower():
+            result = self._mock_article(prompt_lower)
+        elif "edit" in system.lower() or "revis" in system.lower():
+            result = self._mock_edit(prompt_lower)
+        elif "seo" in system.lower():
+            result = self._mock_seo(prompt_lower)
+        elif json_mode or "json" in system.lower():
+            result = self._mock_json(prompt_lower)
+        else:
+            result = f"[Mock LLM] Response to: {prompt[:100]}..."
 
-        return f"[Mock LLM] Response to: {prompt[:100]}..."
+        output_tokens = len(result.split())
+        self._record_usage(input_tokens, output_tokens, "mock")
+        return result
 
     def _mock_research(self, prompt: str) -> str:
         return (
@@ -290,42 +307,6 @@ class LLMAdapter:
             "weaknesses": ["Needs active voice", "Add social proof", "Strengthen CTA"],
             "revision_notes": "Convert passive constructions. Add 1-2 customer quotes. End with clear next step."
         })
-
-    def _mock_revise(self, prompt: str) -> str:
-        return "[Revised content with improved structure, active voice, and stronger CTA.]"
-
-    def _mock_platform_variant(self, prompt: str) -> str:
-        return "[Platform-optimized variant with appropriate format, length, and style.]"
-
-    def _mock_fact_check(self) -> str:
-        return (
-            "## Fact-Check Report\n\n"
-            "**VERIFIED Claims:**\n"
-            "- 34% YoY growth in AI content tools ✅ (supported by McKinsey Digital Report 2025)\n"
-            "- 67% of Fortune 500 companies using AI writing ✅ (confirmed in research brief)\n"
-            "- Multi-agent systems outperform single-model by 2.3x ✅ (Stanford HAI Index)\n\n"
-            "**FLAGGED Claims:**\n"
-            "- '40% quality improvement' ⚠️ — research cites benchmark data; recommend specifying "
-            "the benchmark name for precision.\n\n"
-            "**MISSING Context:**\n"
-            "- Research mentions competitive landscape (Jasper, Copy.ai, Writer.com) not referenced "
-            "in draft — consider adding for reader context.\n\n"
-            "**Overall Accuracy Rating:** Good — minor clarification recommended."
-        )
-
-    def _mock_headlines(self) -> str:
-        return (
-            "[Question]: Is Your Content Strategy Ready for the AI Multi-Agent Revolution? "
-            "— (Challenges reader to self-assess, drives engagement)\n"
-            "[List]: 5 Reasons Multi-Agent AI Pipelines Produce Better Content Than Single Models "
-            "— (Listicle format, high CTR for B2B audiences)\n"
-            "[How-To]: How to Build a Multi-Agent Content Pipeline That Rivals Expert Human Writers "
-            "— (Practical, high search intent)\n"
-            "[Data-Driven]: 34% YoY Growth: Why Enterprises Are Switching to Multi-Agent AI Content "
-            "— (Leads with compelling statistic, builds credibility)\n"
-            "[Bold Statement]: Single-Model AI Content Is Already Obsolete "
-            "— (Contrarian hook, sparks debate and shares)"
-        )
 
     def _mock_json(self, prompt: str) -> str:
         return json.dumps({

@@ -30,6 +30,9 @@ logger = logging.getLogger("contentai")
 async def lifespan(app: FastAPI):
     """Startup/shutdown lifecycle."""
     await db.init()
+    # Load persisted DNA profiles into memory
+    from contentai_pro.ai.dna.engine import dna_engine
+    await dna_engine.load_from_db(db)
     event_bus.start()
     yield
     event_bus.stop()
