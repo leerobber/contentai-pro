@@ -1,7 +1,7 @@
 """Pytest fixtures shared across all test modules."""
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 
 # ---------------------------------------------------------------------------
 # Sample texts for DNA calibration

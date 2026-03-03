@@ -1,5 +1,6 @@
 """Tests for the /api/health endpoint."""
 from fastapi.testclient import TestClient
+
 from contentai_pro.main import app
 
 

@@ -1,7 +1,8 @@
 """Tests for the Adversarial Debate Engine."""
 import json
-import pytest
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 
 def _make_judge_mock(score=8.0, verdict="pass"):

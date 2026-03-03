@@ -1,6 +1,7 @@
 """Tests for the Content Atomizer Engine."""
-import pytest
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from contentai_pro.ai.atomizer.engine import PLATFORM_SPECS
 

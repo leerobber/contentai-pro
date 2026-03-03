@@ -150,7 +150,7 @@ class Orchestrator:
                         result.fact_check = {"report": res.output}
                         await event_bus.emit_stage(pid, "fact_check", "completed", {"length": len(res.output)})
 
-                                # ---------- Stage 4: Edit ----------
+                # ---------- Stage 4: Edit ----------
                 if "edit" not in config.skip_stages and result.draft:
                     res = await self._run_stage("edit", self.editor.execute({
                         "draft": result.draft,
@@ -185,7 +185,7 @@ class Orchestrator:
                         result.headlines = [line.strip() for line in res.output.splitlines() if line.strip()]
                         await event_bus.emit_stage(pid, "headline", "completed", {"count": len(result.headlines)})
 
-                                # ---------- Stage 7: DNA Score ----------
+                # ---------- Stage 7: DNA Score ----------
                 if config.dna_profile and "dna" not in config.skip_stages and current_content:
                     try:
                         await event_bus.emit_stage(pid, "dna", "started")

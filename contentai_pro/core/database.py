@@ -67,6 +67,7 @@ class Database:
                 version_num INTEGER DEFAULT 1,
                 created_at TEXT
             );
+            CREATE INDEX IF NOT EXISTS idx_content_versions_content_id ON content_versions(content_id);
         """)
 
     async def save_content(self, topic: str, body: str, content_type: str = "blog_post",

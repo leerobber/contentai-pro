@@ -89,7 +89,7 @@ class DNAEngine:
         # Sentence lengths
         sent_lens = [len(s.split()) for s in sentences]
         avg_sent = sum(sent_lens) / max(len(sent_lens), 1)
-        variance = math.sqrt(sum((sl - avg_sent) ** 2 for sl in sent_lens) / max(len(sent_lens), 1)) if sent_lens else 0
+        variance = math.sqrt(sum((sent_len - avg_sent) ** 2 for sent_len in sent_lens) / max(len(sent_lens), 1)) if sent_lens else 0
 
         # Vocabulary tier (simple heuristic: words > 8 chars)
         advanced = sum(1 for w in words if len(w) > 8) / max(word_count, 1)

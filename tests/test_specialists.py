@@ -1,10 +1,10 @@
 """Tests for FactCheckerAgent and HeadlineAgent."""
-import pytest
 from unittest.mock import AsyncMock
 
-from contentai_pro.ai.agents.specialists import FactCheckerAgent, HeadlineAgent
-from contentai_pro.ai.agents.base import AgentResult
+import pytest
 
+from contentai_pro.ai.agents.base import AgentResult
+from contentai_pro.ai.agents.specialists import FactCheckerAgent, HeadlineAgent
 
 SAMPLE_DRAFT = (
     "AI content tools have grown 34% year-over-year. "

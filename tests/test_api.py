@@ -1,9 +1,11 @@
 """Tests for the FastAPI endpoints using TestClient."""
 import json
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
 
+from contentai_pro.main import app
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -199,9 +201,6 @@ def test_dna_calibrate_sample_too_short(client):
 
 
 """Tests for GET /api/content list endpoint and word_count in pipeline result."""
-from fastapi.testclient import TestClient
-
-from contentai_pro.main import app
 
 # ---------- Content list endpoint ----------
 
