@@ -188,13 +188,25 @@ class AtomizerEngine:
 
         raw = await llm.generate(ATOMIZER_SYSTEM, prompt, json_mode=True, agent_role="atomizer")
 
+        errors: List[Dict[str, Any]] = []
         try:
             data = json.loads(raw)
         except (json.JSONDecodeError, TypeError):
-            data = {p: raw for p in valid_platforms}
+            logger.error("Failed to parse batch atomizer JSON response", exc_info=True)
+            for p in valid_platforms:
+                errors.append({
+                    "platform": p,
+                    "error": "Batch response JSON parse failure",
+                })
+            return AtomizerResult(
+                source_topic=topic,
+                variants=[],
+                platforms_generated=0,
+                total_latency_ms=(time.perf_counter() - t0) * 1000,
+                errors=errors,
+            )
 
         variants = []
-        errors = []
         for platform in valid_platforms:
             content = data.get(platform)
             if content is None:

@@ -15,21 +15,10 @@ class Settings(BaseSettings):
     MAX_TOKENS: int = 4096
     TEMPERATURE: float = 0.7
 
-    # Per-agent model overrides (cheaper models for lower-stakes tasks)
-    AGENT_MODELS: Dict[str, str] = {
-        "research": "gpt-3.5-turbo",
-        "writer": "claude-sonnet-4-20250514",
-        "editor": "claude-sonnet-4-20250514",
-        "seo": "gpt-3.5-turbo",
-        "fact_checker": "gpt-3.5-turbo",
-        "headline": "gpt-3.5-turbo",
-        "advocate": "claude-sonnet-4-20250514",
-        "critic": "claude-sonnet-4-20250514",
-        "judge": "claude-sonnet-4-20250514",
-        "atomizer": "gpt-3.5-turbo",
-        "dna": "gpt-3.5-turbo",
-        "trends": "gpt-3.5-turbo",
-    }
+    # Per-agent model overrides (cheaper models for lower-stakes tasks).
+    # NOTE: Keep this consistent with LLM_PROVIDER. By default, leave empty so
+    # all agents use MODEL_NAME, and configure per-provider overrides via env/.env.
+    AGENT_MODELS: Dict[str, str] = {}
 
     # App
     APP_NAME: str = "ContentAI Pro"
@@ -53,7 +42,7 @@ class Settings(BaseSettings):
 
     # Debate
     DEBATE_MAX_ROUNDS: int = 2  # Reduced from 3 for cost efficiency
-    DEBATE_PASS_THRESHOLD: float = 7.0  # Reduced from 7.5 for earlier exits
+    DEBATE_PASS_THRESHOLD: float = 7.5
 
     # Atomizer
     ATOMIZER_PLATFORMS: List[str] = [
