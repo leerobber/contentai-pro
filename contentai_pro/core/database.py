@@ -1,16 +1,21 @@
-"""Database — async SQLite for content storage and DNA profiles."""
-import aiosqlite
+"""Database — async SQLite for content storage and DNA profiles.
+
+FIX: Semaphore to prevent concurrent write corruption on single connection.
+"""
+import asyncio
 import json
 import uuid
 from datetime import datetime, timezone
-from typing import Optional, List, Dict
-from pathlib import Path
+from typing import Dict, Optional
+
+import aiosqlite
 
 
 class Database:
     def __init__(self, db_path: str = "contentai.db"):
         self._path = db_path
         self._conn: Optional[aiosqlite.Connection] = None
+        self._write_lock = asyncio.Semaphore(1)  # Serialize writes
 
     async def init(self):
         self._conn = await aiosqlite.connect(self._path)
@@ -60,11 +65,12 @@ class Database:
                            debate_passed: bool = False) -> str:
         cid = str(uuid.uuid4())
         now = datetime.now(timezone.utc).isoformat()
-        await self._conn.execute(
-            "INSERT INTO content (id, topic, content_type, stage, body, metadata, dna_score, debate_passed, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (cid, topic, content_type, stage, body, json.dumps(metadata or {}), dna_score, int(debate_passed), now, now)
-        )
-        await self._conn.commit()
+        async with self._write_lock:
+            await self._conn.execute(
+                "INSERT INTO content (id, topic, content_type, stage, body, metadata, dna_score, debate_passed, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (cid, topic, content_type, stage, body, json.dumps(metadata or {}), dna_score, int(debate_passed), now, now)
+            )
+            await self._conn.commit()
         return cid
 
     async def get_content(self, cid: str) -> Optional[Dict]:
@@ -79,32 +85,35 @@ class Database:
     async def save_dna_profile(self, name: str, fingerprint: dict, samples_count: int) -> str:
         pid = str(uuid.uuid4())
         now = datetime.now(timezone.utc).isoformat()
-        await self._conn.execute(
-            "INSERT INTO dna_profiles (id, name, fingerprint, samples_count, created_at) VALUES (?,?,?,?,?)",
-            (pid, name, json.dumps(fingerprint), samples_count, now)
-        )
-        await self._conn.commit()
+        async with self._write_lock:
+            await self._conn.execute(
+                "INSERT INTO dna_profiles (id, name, fingerprint, samples_count, created_at) VALUES (?,?,?,?,?)",
+                (pid, name, json.dumps(fingerprint), samples_count, now)
+            )
+            await self._conn.commit()
         return pid
 
     async def save_debate_log(self, content_id: str, round_num: int, advocate: str,
                                critic: str, judge_score: float, verdict: str) -> str:
         lid = str(uuid.uuid4())
         now = datetime.now(timezone.utc).isoformat()
-        await self._conn.execute(
-            "INSERT INTO debate_logs (id, content_id, round, advocate, critic, judge_score, judge_verdict, created_at) VALUES (?,?,?,?,?,?,?,?)",
-            (lid, content_id, round_num, advocate, critic, judge_score, verdict, now)
-        )
-        await self._conn.commit()
+        async with self._write_lock:
+            await self._conn.execute(
+                "INSERT INTO debate_logs (id, content_id, round, advocate, critic, judge_score, judge_verdict, created_at) VALUES (?,?,?,?,?,?,?,?)",
+                (lid, content_id, round_num, advocate, critic, judge_score, verdict, now)
+            )
+            await self._conn.commit()
         return lid
 
     async def save_atomized(self, content_id: str, platform: str, variant: str, metadata: dict = None) -> str:
         aid = str(uuid.uuid4())
         now = datetime.now(timezone.utc).isoformat()
-        await self._conn.execute(
-            "INSERT INTO atomized (id, content_id, platform, variant, metadata, created_at) VALUES (?,?,?,?,?,?)",
-            (aid, content_id, platform, variant, json.dumps(metadata or {}), now)
-        )
-        await self._conn.commit()
+        async with self._write_lock:
+            await self._conn.execute(
+                "INSERT INTO atomized (id, content_id, platform, variant, metadata, created_at) VALUES (?,?,?,?,?,?)",
+                (aid, content_id, platform, variant, json.dumps(metadata or {}), now)
+            )
+            await self._conn.commit()
         return aid
 
     async def close(self):
