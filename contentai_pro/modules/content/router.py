@@ -7,8 +7,8 @@ from dataclasses import asdict
 
 from contentai_pro.ai.orchestrator import orchestrator, PipelineConfig
 from contentai_pro.ai.agents.debate import debate_engine
-from contentai_pro.ai.atomizer.engine import atomizer_engine
-from contentai_pro.ai.dna.engine import dna_engine
+from contentai_pro.ai.atomizer.engine import atomizer_engine, PerformanceRecord
+from contentai_pro.ai.dna.engine import dna_engine, DNALayer
 from contentai_pro.ai.trends.radar import trend_radar
 from contentai_pro.ai.llm_adapter import llm
 from contentai_pro.core.events import event_bus
@@ -28,6 +28,7 @@ class GenerateRequest(BaseModel):
     keywords: List[str] = Field(default_factory=list)
     dna_profile: Optional[str] = None
     enable_debate: bool = True
+    debate_mode: str = "classic"   # "classic" | "board"
     enable_atomizer: bool = True
     atomizer_platforms: Optional[List[str]] = None
     skip_stages: List[str] = Field(default_factory=list)
@@ -76,6 +77,7 @@ async def generate_full(req: GenerateRequest):
         keywords=req.keywords,
         dna_profile=req.dna_profile,
         enable_debate=req.enable_debate,
+        debate_mode=req.debate_mode,
         enable_atomizer=req.enable_atomizer,
         atomizer_platforms=req.atomizer_platforms,
         skip_stages=req.skip_stages,
@@ -130,6 +132,7 @@ async def generate_stream(req: GenerateRequest):
         keywords=req.keywords,
         dna_profile=req.dna_profile,
         enable_debate=req.enable_debate,
+        debate_mode=req.debate_mode,
         enable_atomizer=req.enable_atomizer,
         atomizer_platforms=req.atomizer_platforms,
         skip_stages=req.skip_stages,
@@ -235,3 +238,223 @@ async def get_content(content_id: str):
     if not content:
         raise HTTPException(status_code=404, detail="Content not found")
     return content
+
+
+# ── Board Debate ──────────────────────────────────────────────────────────
+
+class BoardDebateRequest(BaseModel):
+    content: str
+    topic: str
+    content_type: str = "blog_post"
+    audience: str = "general"
+
+
+@router.post("/debate/board")
+async def debate_board(req: BoardDebateRequest):
+    """Run a Board of Directors debate: 6 specialized critics + Meta-Judge."""
+    result = await debate_engine.run_board(
+        req.content, req.topic, req.content_type, req.audience
+    )
+    return {
+        "passed": result.passed,
+        "final_score": result.final_score,
+        "confidence_interval": result.confidence_interval,
+        "consensus_votes": [
+            {
+                "agent": v.agent,
+                "score": v.score,
+                "confidence": v.confidence,
+                "verdict": v.verdict,
+                "notes": v.notes,
+            }
+            for v in result.consensus_votes
+        ],
+        "revised_content": result.revised_content,
+        "transcript": result.transcript,
+        "latency_ms": round(result.latency_ms, 1),
+    }
+
+
+# ── DNA Layer Calibration & Versioning ───────────────────────────────────
+
+class DNALayerCalibrateRequest(BaseModel):
+    name: str
+    samples: List[str]
+    layer: str = "macro"          # "macro" | "micro" | "contextual" | "temporal"
+    context_key: str = ""         # content_type for micro; context label for contextual
+
+
+class DNAInterpolateRequest(BaseModel):
+    profile_a: str
+    profile_b: str
+    weight_a: float = 0.5
+    new_name: str = ""
+
+
+class DNADriftRequest(BaseModel):
+    text: str
+    profile_name: str
+    baseline_version_idx: int = 0
+
+
+class DNAVersionRequest(BaseModel):
+    profile_name: str
+    label: str = ""
+    layer: str = "macro"
+
+
+@router.post("/dna/calibrate/layer")
+async def calibrate_dna_layer(req: DNALayerCalibrateRequest):
+    """Calibrate a specific DNA layer (macro/micro/temporal/contextual)."""
+    try:
+        layer = DNALayer(req.layer)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Unknown layer '{req.layer}'. "
+                            f"Valid values: {[l.value for l in DNALayer]}")
+    try:
+        profile = dna_engine.calibrate_layer(req.name, req.samples, layer, req.context_key)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {
+        "name": profile.name,
+        "layer": req.layer,
+        "context_key": req.context_key,
+        "fingerprint": (
+            profile.macro_dna if layer == DNALayer.MACRO
+            else profile.micro_dna.get(req.context_key, {})
+            if layer == DNALayer.MICRO
+            else profile.contextual_dna.get(req.context_key, {})
+        ),
+        "versions_count": len(profile.versions),
+    }
+
+
+@router.post("/dna/interpolate")
+async def interpolate_dna(req: DNAInterpolateRequest):
+    """Blend two DNA profiles into a hybrid voice."""
+    try:
+        blended = dna_engine.interpolate(req.profile_a, req.profile_b, req.weight_a, req.new_name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {
+        "name": blended.name,
+        "fingerprint": blended.fingerprint,
+        "summary": dna_engine.get_profile_summary(blended.name),
+    }
+
+
+@router.post("/dna/drift")
+async def detect_dna_drift(req: DNADriftRequest):
+    """Detect voice drift by comparing text to a profile's baseline snapshot."""
+    alerts = dna_engine.detect_drift(req.text, req.profile_name, req.baseline_version_idx)
+    if not alerts:
+        raise HTTPException(status_code=404, detail=f"Profile '{req.profile_name}' not found.")
+    exceeded = [a for a in alerts if a.exceeded]
+    return {
+        "profile_name": req.profile_name,
+        "total_dimensions": len(alerts),
+        "drifted_dimensions": len(exceeded),
+        "drift_detected": len(exceeded) > 0,
+        "alerts": [
+            {
+                "dimension": a.dimension,
+                "baseline": a.baseline,
+                "current": a.current,
+                "delta_pct": a.delta_pct,
+                "exceeded": a.exceeded,
+            }
+            for a in alerts
+        ],
+    }
+
+
+@router.post("/dna/version")
+async def create_dna_version(req: DNAVersionRequest):
+    """Snapshot the current DNA fingerprint as a named version for A/B testing."""
+    try:
+        layer = DNALayer(req.layer)
+        version = dna_engine.create_version(req.profile_name, req.label, layer)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {
+        "version_id": version.version_id,
+        "label": version.label,
+        "layer": version.layer.value,
+        "created_at": version.created_at,
+    }
+
+
+# ── Atomizer Intelligence ─────────────────────────────────────────────────
+
+class AtomizeVariantsRequest(BaseModel):
+    content: str
+    topic: str
+    platform: str
+    n: int = Field(default=2, ge=1, le=4)
+
+
+class PerformanceRecordRequest(BaseModel):
+    platform: str
+    content_id: str
+    impressions: int = 0
+    clicks: int = 0
+    shares: int = 0
+    comments: int = 0
+
+
+@router.post("/atomize/variants")
+async def atomize_variants(req: AtomizeVariantsRequest):
+    """Generate N alternative variants of content for A/B testing on a platform."""
+    try:
+        variants = await atomizer_engine.generate_variants(
+            req.content, req.topic, req.platform, req.n
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {
+        "platform": req.platform,
+        "variants": [
+            {
+                "ab_variant": v.metadata.get("ab_variant"),
+                "content": v.content,
+                "char_count": v.char_count,
+            }
+            for v in variants
+        ],
+    }
+
+
+@router.get("/atomize/timing/{platform}")
+async def get_timing(platform: str):
+    """Get optimal posting timing recommendation for a platform."""
+    rec = atomizer_engine.timing_for(platform)
+    return {
+        "platform": rec.platform,
+        "best_days": rec.best_days,
+        "best_hours_utc": rec.best_hours_utc,
+        "frequency": rec.frequency,
+        "rationale": rec.rationale,
+        "next_window": rec.next_window,
+    }
+
+
+@router.post("/atomize/performance")
+async def record_performance(req: PerformanceRecordRequest):
+    """Record engagement metrics to feed the performance learning loop."""
+    record = PerformanceRecord(
+        platform=req.platform,
+        content_id=req.content_id,
+        impressions=req.impressions,
+        clicks=req.clicks,
+        shares=req.shares,
+        comments=req.comments,
+    )
+    atomizer_engine.record_performance(record)
+    summary = atomizer_engine.get_performance_summary(req.platform)
+    return {"recorded": True, "platform_summary": summary}
+
+
+@router.get("/atomize/performance/{platform}")
+async def get_performance_summary(platform: str):
+    """Get aggregated engagement stats for a platform."""
+    return atomizer_engine.get_performance_summary(platform)

@@ -7,8 +7,8 @@ from dataclasses import dataclass, field, asdict
 from typing import Dict, Any, Optional, List
 
 from contentai_pro.ai.agents.specialists import ResearchAgent, WriterAgent, EditorAgent, SEOAgent
-from contentai_pro.ai.agents.debate import debate_engine, DebateResult
-from contentai_pro.ai.dna.engine import dna_engine
+from contentai_pro.ai.agents.debate import debate_engine, DebateResult, BoardDebateResult
+from contentai_pro.ai.dna.engine import dna_engine, DNALayer
 from contentai_pro.ai.atomizer.engine import atomizer_engine, AtomizerResult
 from contentai_pro.core.events import event_bus, PipelineEvent
 from contentai_pro.core.database import db
@@ -24,6 +24,7 @@ class PipelineConfig:
     keywords: List[str] = field(default_factory=list)
     dna_profile: Optional[str] = None
     enable_debate: bool = True
+    debate_mode: str = "classic"   # "classic" | "board"
     enable_atomizer: bool = True
     atomizer_platforms: Optional[List[str]] = None
     skip_stages: List[str] = field(default_factory=list)
@@ -129,29 +130,61 @@ class Orchestrator:
         # ---------- Stage 6: Adversarial Debate ----------
         if config.enable_debate and "debate" not in config.skip_stages:
             await event_bus.emit_stage(pid, "debate", "started")
-            debate_result: DebateResult = await debate_engine.run(
-                current_content, config.topic, config.content_type
-            )
-            result.debate = {
-                "passed": debate_result.passed,
-                "final_score": debate_result.final_score,
-                "total_rounds": debate_result.total_rounds,
-                "rounds": [
-                    {
-                        "round": r.round_num,
-                        "advocate": r.advocate_argument[:300],
-                        "critic": r.critic_argument[:300],
-                        "score": r.judge_score,
-                        "verdict": r.judge_verdict,
-                    }
-                    for r in debate_result.rounds
-                ],
-            }
-            if debate_result.revised_content:
-                current_content = debate_result.revised_content
+
+            if config.debate_mode == "board":
+                board_result: BoardDebateResult = await debate_engine.run_board(
+                    current_content, config.topic, config.content_type, config.audience
+                )
+                result.debate = {
+                    "mode": "board",
+                    "passed": board_result.passed,
+                    "final_score": board_result.final_score,
+                    "confidence_interval": list(board_result.confidence_interval),
+                    "total_rounds": board_result.total_rounds,
+                    "consensus_votes": [
+                        {
+                            "agent": v.agent,
+                            "score": v.score,
+                            "confidence": v.confidence,
+                            "verdict": v.verdict,
+                            "notes": v.notes[:300],
+                        }
+                        for v in board_result.consensus_votes
+                    ],
+                    "transcript": board_result.transcript,
+                }
+                if board_result.revised_content:
+                    current_content = board_result.revised_content
+                passed_flag = board_result.passed
+                score_val = board_result.final_score
+            else:
+                debate_result: DebateResult = await debate_engine.run(
+                    current_content, config.topic, config.content_type
+                )
+                result.debate = {
+                    "mode": "classic",
+                    "passed": debate_result.passed,
+                    "final_score": debate_result.final_score,
+                    "total_rounds": debate_result.total_rounds,
+                    "rounds": [
+                        {
+                            "round": r.round_num,
+                            "advocate": r.advocate_argument[:300],
+                            "critic": r.critic_argument[:300],
+                            "score": r.judge_score,
+                            "verdict": r.judge_verdict,
+                        }
+                        for r in debate_result.rounds
+                    ],
+                }
+                if debate_result.revised_content:
+                    current_content = debate_result.revised_content
+                passed_flag = debate_result.passed
+                score_val = debate_result.final_score
+
             stages_completed.append("debate")
             await event_bus.emit_stage(pid, "debate", "completed", {
-                "passed": debate_result.passed, "score": debate_result.final_score
+                "passed": passed_flag, "score": score_val, "mode": config.debate_mode
             })
 
         result.final_content = current_content
@@ -173,6 +206,15 @@ class Orchestrator:
                     }
                     for v in atom_result.variants
                 ],
+                "timing_recommendations": {
+                    p: {
+                        "best_days": t.best_days,
+                        "best_hours_utc": t.best_hours_utc,
+                        "frequency": t.frequency,
+                        "next_window": t.next_window,
+                    }
+                    for p, t in atom_result.timing_recommendations.items()
+                },
             }
             stages_completed.append("atomize")
             await event_bus.emit_stage(pid, "atomize", "completed", {"platforms": atom_result.platforms_generated})
