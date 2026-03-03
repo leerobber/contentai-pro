@@ -1,21 +1,22 @@
 """ContentAI Pro — Multi-Agent Content Generation Platform."""
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import List
+
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List
-from pathlib import Path
 
-from contentai_pro.core.config import settings
-from contentai_pro.core.events import event_bus
-from contentai_pro.core.middleware import RequestIdMiddleware
-from contentai_pro.core.database import db
-from contentai_pro.core.rate_limiter import RateLimitMiddleware, rate_limiter
-from contentai_pro.core.metrics import metrics
 from contentai_pro.core.cache import app_cache
+from contentai_pro.core.config import settings
+from contentai_pro.core.database import db
+from contentai_pro.core.events import event_bus
+from contentai_pro.core.metrics import metrics
+from contentai_pro.core.middleware import RequestIdMiddleware
+from contentai_pro.core.rate_limiter import RateLimitMiddleware, rate_limiter
 from contentai_pro.core.webhooks import webhook_manager
 from contentai_pro.modules.content.router import router as content_router
 

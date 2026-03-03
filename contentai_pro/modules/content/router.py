@@ -5,12 +5,12 @@ FIX: Usage/cost tracking + errors in all pipeline responses.
 FIX: API key auth via X-API-Key header (optional, enabled via settings).
 """
 import asyncio
-from typing import List, Literal, Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Security
 from fastapi.responses import StreamingResponse
 from fastapi.security import APIKeyHeader
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from contentai_pro.ai.agents.debate import debate_engine
 from contentai_pro.ai.atomizer.engine import atomizer_engine
@@ -20,6 +20,10 @@ from contentai_pro.ai.trends.radar import trend_radar
 from contentai_pro.core.config import settings
 from contentai_pro.core.database import db
 from contentai_pro.core.events import event_bus
+from contentai_pro.modules.content.schemas import (
+    DNACalibrateRequest,
+    GenerateRequest,
+)
 
 router = APIRouter()
 
@@ -37,20 +41,6 @@ async def verify_api_key(api_key: Optional[str] = Security(api_key_header)):
 
 
 # ---------- Request / Response Models ----------
-
-class GenerateRequest(BaseModel):
-    topic: str
-    content_type: str = "blog_post"
-    audience: str = "tech professionals"
-    tone: str = "professional yet approachable"
-    word_count: int = 1200
-    keywords: List[str] = Field(default_factory=list)
-    dna_profile: Optional[str] = None
-    enable_debate: bool = True
-    enable_atomizer: bool = True
-    atomizer_platforms: Optional[List[str]] = None
-    skip_stages: List[str] = Field(default_factory=list)
-    fail_policy: Literal["skip", "fail_fast"] = "skip"
 
 
 class QuickGenRequest(BaseModel):
@@ -70,11 +60,6 @@ class DebateRequest(BaseModel):
     content: str
     topic: str
     content_type: str = "blog_post"
-
-
-class DNACalibrateRequest(BaseModel):
-    name: str
-    samples: List[str]
 
 
 class DNAScoreRequest(BaseModel):
@@ -97,7 +82,7 @@ async def generate_full(req: GenerateRequest, _key: Optional[str] = Depends(veri
         dna_profile=req.dna_profile,
         enable_debate=req.enable_debate,
         enable_atomizer=req.enable_atomizer,
-        atomizer_platforms=req.atomizer_platforms,
+        atomizer_platforms=[p.value for p in req.atomizer_platforms] if req.atomizer_platforms else None,
         skip_stages=req.skip_stages,
         fail_policy=req.fail_policy,
     )
@@ -159,7 +144,7 @@ async def generate_stream(req: GenerateRequest, _key: Optional[str] = Depends(ve
         dna_profile=req.dna_profile,
         enable_debate=req.enable_debate,
         enable_atomizer=req.enable_atomizer,
-        atomizer_platforms=req.atomizer_platforms,
+        atomizer_platforms=[p.value for p in req.atomizer_platforms] if req.atomizer_platforms else None,
         skip_stages=req.skip_stages,
         fail_policy=req.fail_policy,
     )

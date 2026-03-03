@@ -1,7 +1,7 @@
 """In-memory LRU cache with TTL support."""
-import time
 import logging
 import threading
+import time
 from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, Optional

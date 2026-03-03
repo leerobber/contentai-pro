@@ -3,13 +3,14 @@
 FIX: Token counting + cost estimation per call.
 FIX: Retry logic with exponential backoff for transient failures.
 """
+import asyncio
 import json
 import logging
 import random
-import asyncio
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, List
+from typing import Any, Dict, List, Optional
+
 from contentai_pro.core.config import settings
 
 logger = logging.getLogger("contentai")
@@ -119,12 +120,15 @@ class LLMAdapter:
             self._provider = "mock"
 
     async def generate(self, system: str, prompt: str, max_tokens: int = None,
-                       temperature: float = None, json_mode: bool = False) -> str:
+                       temperature: float = None, json_mode: bool = False,
+                       _retries: int = None, _backoff: float = None) -> str:
         max_tokens = max_tokens or settings.MAX_TOKENS
         temperature = temperature if temperature is not None else settings.TEMPERATURE
+        max_tries = _retries if _retries is not None else MAX_RETRIES
+        base_delay = _backoff if _backoff is not None else RETRY_BASE_DELAY
 
         last_error = None
-        for attempt in range(MAX_RETRIES):
+        for attempt in range(max_tries):
             try:
                 if self._provider == "anthropic":
                     return await self._anthropic_generate(system, prompt, max_tokens, temperature)
@@ -134,8 +138,6 @@ class LLMAdapter:
                     return await self._mock_generate(system, prompt, json_mode)
             except Exception as e:
                 last_error = e
-                if self._provider == "mock":
-                    raise  # Mock shouldn't fail; if it does, it's a code bug
                 # Only retry transient errors (rate limits, timeouts, transient connectivity).
                 # Unrecoverable errors (auth failures, bad requests) are re-raised immediately.
                 error_name = type(e).__name__
@@ -148,11 +150,12 @@ class LLMAdapter:
                 )
                 if not is_transient:
                     raise
-                wait = RETRY_BASE_DELAY * (2 ** attempt) + random.uniform(0, 0.5)
-                logger.warning(f"LLM call failed (attempt {attempt + 1}/{MAX_RETRIES}): {e}. Retrying in {wait:.1f}s")
-                await asyncio.sleep(wait)
+                if attempt < max_tries - 1:
+                    wait = base_delay * (2 ** attempt) + random.uniform(0, 0.5 if base_delay > 0 else 0)
+                    logger.warning(f"LLM call failed (attempt {attempt + 1}/{max_tries}): {e}. Retrying in {wait:.1f}s")
+                    await asyncio.sleep(wait)
 
-        raise RuntimeError(f"LLM call failed after {MAX_RETRIES} retries: {last_error}") from last_error
+        raise last_error
 
     def _record_usage(self, input_tokens: int, output_tokens: int, model: str) -> None:
         """Record token usage to the singleton tracker and, if set, the per-run tracker."""

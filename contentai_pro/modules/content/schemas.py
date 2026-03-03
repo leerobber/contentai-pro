@@ -2,6 +2,7 @@
 import re
 from enum import Enum
 from typing import List, Optional
+
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
@@ -91,6 +92,10 @@ class GenerateRequest(BaseModel):
     skip_stages: List[str] = Field(
         default_factory=list,
         description="Pipeline stage names to skip.",
+    )
+    fail_policy: str = Field(
+        default="skip",
+        description="Error handling policy: 'skip' continues on stage failure, 'fail_fast' aborts.",
     )
 
     @field_validator("topic")

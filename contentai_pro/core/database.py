@@ -8,6 +8,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
+import aiosqlite
+
 
 class Database:
     def __init__(self, db_path: str = "contentai.db"):

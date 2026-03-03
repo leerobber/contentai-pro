@@ -2,13 +2,13 @@
 import logging
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from typing import Dict, Deque, Optional
+from typing import Deque, Dict, Optional
 
 logger = logging.getLogger("contentai")
 
 # Optional Prometheus support
 try:
-    from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
+    from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
     _PROMETHEUS_AVAILABLE = True
 except ImportError:
     _PROMETHEUS_AVAILABLE = False

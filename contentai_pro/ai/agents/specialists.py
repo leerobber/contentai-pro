@@ -1,7 +1,8 @@
 """Specialist agents — Research, Write, Edit, SEO, FactChecker, Headline."""
 import time
-from typing import Dict, Any
-from contentai_pro.ai.agents.base import BaseAgent, AgentResult
+from typing import Any, Dict
+
+from contentai_pro.ai.agents.base import AgentResult, BaseAgent
 from contentai_pro.ai.llm_adapter import llm
 
 

@@ -3,13 +3,14 @@
 FIX: Advocate + Critic run in parallel (independent LLM calls).
 FIX: Robust JSON extraction from Judge response (handles markdown fences).
 """
+import asyncio
 import json
+import logging
 import re
 import time
-import asyncio
-import logging
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
+
 from contentai_pro.ai.llm_adapter import llm
 from contentai_pro.core.config import settings
 

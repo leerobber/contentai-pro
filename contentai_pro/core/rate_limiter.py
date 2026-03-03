@@ -1,9 +1,9 @@
 """Rate Limiting Middleware for FastAPI."""
-import time
 import logging
+import time
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Dict, Optional
-from collections import deque
 
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
