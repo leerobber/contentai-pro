@@ -1,6 +1,6 @@
 """Tests for Settings configuration defaults."""
 import warnings
-import pytest
+
 from contentai_pro.core.config import Settings
 
 
@@ -33,7 +33,7 @@ def test_settings_default_cors():
 def test_settings_secret_key_warns_on_default():
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
-        s = Settings(SECRET_KEY="change-me-in-production")
+        Settings(SECRET_KEY="change-me-in-production")
         assert any("SECRET_KEY" in str(warning.message) for warning in w), (
             "Expected a UserWarning about default SECRET_KEY"
         )
@@ -42,6 +42,6 @@ def test_settings_secret_key_warns_on_default():
 def test_settings_secret_key_no_warn_when_changed():
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
-        s = Settings(SECRET_KEY="a-real-secret-key-for-testing-purposes")
+        Settings(SECRET_KEY="a-real-secret-key-for-testing-purposes")
         secret_warns = [x for x in w if "SECRET_KEY" in str(x.message)]
         assert len(secret_warns) == 0

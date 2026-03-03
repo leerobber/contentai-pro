@@ -1,9 +1,9 @@
 """Trend Radar — live trending topics from HN, Reddit, Dev.to."""
-import time
 import asyncio
+import time
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict
 from datetime import datetime, timezone
+from typing import List, Optional
 
 try:
     import httpx

@@ -1,10 +1,17 @@
-"""Content DNA Engine — 14-dimension voice fingerprinting for style consistency."""
-import re
+"""Content DNA Engine — 14-dimension voice fingerprinting for style consistency.
+
+FIX: Profiles persist to SQLite and reload on startup (was in-memory only).
+"""
 import json
+import logging
 import math
+import re
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional
+
 from contentai_pro.core.config import settings
+
+logger = logging.getLogger("contentai")
 
 
 # The 14 DNA dimensions
@@ -39,6 +46,37 @@ class DNAEngine:
     def __init__(self):
         self.profiles: Dict[str, DNAProfile] = {}
 
+    async def load_from_db(self, db_instance) -> int:
+        """Load all persisted DNA profiles from database on startup.
+        Returns the number of profiles loaded."""
+        try:
+            if not db_instance._conn:
+                return 0
+            cursor = await db_instance._conn.execute(
+                "SELECT name, fingerprint, samples_count FROM dna_profiles ORDER BY rowid DESC"
+            )
+            rows = await cursor.fetchall()
+            loaded = 0
+            for row in rows:
+                name = row[0] if isinstance(row, tuple) else row["name"]
+                fingerprint_raw = row[1] if isinstance(row, tuple) else row["fingerprint"]
+                samples = row[2] if isinstance(row, tuple) else row["samples_count"]
+                try:
+                    fp = json.loads(fingerprint_raw) if isinstance(fingerprint_raw, str) else fingerprint_raw
+                    # Only load if not already in memory (in-memory takes precedence)
+                    if name not in self.profiles:
+                        self.profiles[name] = DNAProfile(
+                            name=name, fingerprint=fp, samples_count=samples
+                        )
+                        loaded += 1
+                except (json.JSONDecodeError, TypeError) as e:
+                    logger.warning(f"Skipping corrupt DNA profile '{name}': {e}")
+            logger.info(f"Loaded {loaded} DNA profiles from database")
+            return loaded
+        except Exception as e:
+            logger.error(f"Failed to load DNA profiles from database: {e}")
+            return 0
+
     def analyze_sample(self, text: str) -> Dict[str, float]:
         """Extract 14-dimension fingerprint from a single text sample."""
         sentences = re.split(r'[.!?]+', text)
@@ -51,7 +89,7 @@ class DNAEngine:
         # Sentence lengths
         sent_lens = [len(s.split()) for s in sentences]
         avg_sent = sum(sent_lens) / max(len(sent_lens), 1)
-        variance = math.sqrt(sum((l - avg_sent) ** 2 for l in sent_lens) / max(len(sent_lens), 1)) if sent_lens else 0
+        variance = math.sqrt(sum((sent_len - avg_sent) ** 2 for sent_len in sent_lens) / max(len(sent_lens), 1)) if sent_lens else 0
 
         # Vocabulary tier (simple heuristic: words > 8 chars)
         advanced = sum(1 for w in words if len(w) > 8) / max(word_count, 1)

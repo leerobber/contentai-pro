@@ -1,7 +1,7 @@
 """Base agent — interface all specialist agents implement."""
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 
 @dataclass

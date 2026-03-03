@@ -1,8 +1,9 @@
 """Settings — loaded from env / .env file."""
 import warnings
-from pydantic_settings import BaseSettings
-from pydantic import field_validator
 from typing import List
+
+from pydantic import field_validator
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -26,6 +27,9 @@ class Settings(BaseSettings):
 
     # Database
     DATABASE_URL: str = "sqlite+aiosqlite:///./contentai.db"
+
+    # Auth (optional — empty = auth disabled)
+    AUTH_API_KEYS: List[str] = []
 
     # DNA Engine
     DNA_SAMPLE_MIN: int = 3

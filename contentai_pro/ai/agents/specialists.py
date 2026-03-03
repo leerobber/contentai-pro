@@ -1,7 +1,8 @@
-"""Specialist agents — Research, Write, Edit, SEO."""
+"""Specialist agents — Research, Write, Edit, SEO, FactChecker, Headline."""
 import time
-from typing import Dict, Any
-from contentai_pro.ai.agents.base import BaseAgent, AgentResult
+from typing import Any, Dict
+
+from contentai_pro.ai.agents.base import AgentResult, BaseAgent
 from contentai_pro.ai.llm_adapter import llm
 
 
@@ -131,4 +132,74 @@ class SEOAgent(BaseAgent):
             agent=self.name, output=output,
             latency_ms=(time.perf_counter() - t0) * 1000,
             metadata={"keywords": keywords}
+        )
+
+
+class FactCheckerAgent(BaseAgent):
+    name = "fact_checker"
+    system_prompt = (
+        "You are a meticulous fact-checker. Cross-reference every claim, statistic, and data point "
+        "in the draft against the research brief provided. Flag any claim that is unsupported, "
+        "overstated, or contradicts the research. For each flag, state the original claim, the issue, "
+        "and a suggested correction. Also note which claims are well-supported."
+    )
+
+    async def execute(self, context: Dict[str, Any]) -> AgentResult:
+        t0 = time.perf_counter()
+        draft = context.get("draft", "")
+        research = context.get("research", "")
+        topic = context.get("topic", "")
+
+        prompt = (
+            f"Fact-check the following draft on '{topic}'.\n\n"
+            f"**Research Brief (ground truth):**\n{research}\n\n"
+            f"**Draft to Check:**\n{draft}\n\n"
+            f"Return a structured fact-check report with:\n"
+            f"1. VERIFIED claims (supported by research)\n"
+            f"2. FLAGGED claims (unsupported or overstated) with suggested corrections\n"
+            f"3. MISSING context (important facts from research not used in draft)\n"
+            f"4. Overall accuracy rating (Excellent / Good / Needs Revision)"
+        )
+        output = await llm.generate(self.system_prompt, prompt, temperature=0.1)
+        return AgentResult(
+            agent=self.name, output=output,
+            latency_ms=(time.perf_counter() - t0) * 1000,
+            metadata={"topic": topic}
+        )
+
+
+class HeadlineAgent(BaseAgent):
+    name = "headline"
+    system_prompt = (
+        "You are a world-class copywriter specializing in high-converting headlines. "
+        "Given content and its SEO keywords, generate five distinct headline options. "
+        "Each headline should use a different proven formula: question, list, how-to, "
+        "data-driven, and bold statement. Explain the angle for each option."
+    )
+
+    async def execute(self, context: Dict[str, Any]) -> AgentResult:
+        t0 = time.perf_counter()
+        content = context.get("content", "")
+        topic = context.get("topic", "")
+        keywords = context.get("keywords", [])
+
+        kw_str = ", ".join(keywords) if keywords else "auto-detect from content"
+
+        prompt = (
+            f"Generate 5 headline options for a piece on '{topic}'.\n\n"
+            f"**SEO Keywords:** {kw_str}\n\n"
+            f"**Content Preview (first 500 chars):**\n{content[:500]}\n\n"
+            f"Provide 5 headlines using these formulas:\n"
+            f"1. Question — sparks curiosity\n"
+            f"2. List — 'N ways/reasons/steps'\n"
+            f"3. How-To — practical, instructional\n"
+            f"4. Data-Driven — lead with a surprising statistic\n"
+            f"5. Bold Statement — confident, contrarian, or provocative\n\n"
+            f"Format each as: [Formula]: Headline — (brief rationale)"
+        )
+        output = await llm.generate(self.system_prompt, prompt, temperature=0.8)
+        return AgentResult(
+            agent=self.name, output=output,
+            latency_ms=(time.perf_counter() - t0) * 1000,
+            metadata={"topic": topic, "keywords": keywords}
         )

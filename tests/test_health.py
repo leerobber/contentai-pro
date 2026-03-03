@@ -1,5 +1,6 @@
 """Tests for the /api/health endpoint."""
 from fastapi.testclient import TestClient
+
 from contentai_pro.main import app
 
 
@@ -25,3 +26,14 @@ def test_health_mode_field():
         response = client.get("/api/health")
     data = response.json()
     assert data["mode"] in ("mock", "anthropic", "openai")
+
+
+def test_health_stages_match_skip_stages_keys():
+    """stages list must contain the keys clients pass to skip_stages."""
+    with TestClient(app) as client:
+        response = client.get("/api/health")
+    data = response.json()
+    assert isinstance(data["stages"], list)
+    assert set(data["stages"]) == {
+        "research", "write", "fact_check", "edit", "seo", "headline", "dna", "debate", "atomize"
+    }
