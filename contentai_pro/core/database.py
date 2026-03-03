@@ -4,7 +4,6 @@ import json
 import uuid
 from datetime import datetime, timezone
 from typing import Optional, List, Dict
-from pathlib import Path
 
 
 class Database:
