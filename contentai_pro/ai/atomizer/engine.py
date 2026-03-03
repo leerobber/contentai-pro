@@ -3,12 +3,13 @@
 FIX: Parallelized with asyncio.gather (was serial — 7x latency reduction).
 FIX: Platform-aware truncation (sentence-boundary, not mid-word).
 """
-import re
-import time
 import asyncio
 import logging
+import re
+import time
 from dataclasses import dataclass, field
-from typing import Dict, List, Any, Optional
+from typing import Any, Dict, List, Optional
+
 from contentai_pro.ai.llm_adapter import llm
 from contentai_pro.core.config import settings
 
@@ -107,15 +108,29 @@ def _smart_truncate(text: str, max_chars: int, platform: str) -> str:
                 result = candidate
             else:
                 break
-        return result if result else text[:max_chars - 3].rsplit(' ', 1)[0] + "..."
+        if result:
+            return result
+        # Single tweet larger than max_chars — fall through to word-boundary logic below
 
-    # All other platforms: truncate at sentence boundary
+    # All other platforms (and twitter overflow): truncate at sentence boundary
+    if max_chars <= 3:
+        return text[:max_chars]
+
     truncated = text[:max_chars]
     last_period = max(truncated.rfind('. '), truncated.rfind('.\n'), truncated.rfind('!'), truncated.rfind('?'))
     if last_period > max_chars * 0.5:
         return truncated[:last_period + 1]
-    # Fall back to word boundary
-    return truncated.rsplit(' ', 1)[0] + "..."
+
+    # Fall back to word boundary, ensuring we never exceed max_chars
+    word_truncated = truncated.rsplit(' ', 1)[0]
+    if not word_truncated:
+        # No spaces found; return a hard cut within limit
+        return text[:max_chars]
+    if len(word_truncated) + 3 <= max_chars:
+        return word_truncated + "..."
+    # word_truncated is already near the limit; trim further to fit the ellipsis
+    safe_cutoff = max_chars - 3
+    return word_truncated[:safe_cutoff] + "..."
 
 
 class AtomizerEngine:

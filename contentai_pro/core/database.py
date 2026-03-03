@@ -3,12 +3,12 @@
 FIX: Semaphore to prevent concurrent write corruption on single connection.
 """
 import asyncio
-import aiosqlite
 import json
 import uuid
 from datetime import datetime, timezone
-from typing import Optional, List, Dict
-from pathlib import Path
+from typing import Dict, Optional
+
+import aiosqlite
 
 
 class Database:

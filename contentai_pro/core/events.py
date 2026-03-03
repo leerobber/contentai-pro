@@ -2,10 +2,10 @@
 import asyncio
 import json
 import uuid
-from datetime import datetime, timezone
-from dataclasses import dataclass, field, asdict
-from typing import Dict, AsyncGenerator, Optional
 from collections import defaultdict
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
+from typing import AsyncGenerator, Dict, Optional
 
 
 @dataclass
@@ -65,7 +65,7 @@ class EventBus:
                 if event is None:
                     break
                 yield event
-                if event.status == "completed" and event.stage == "pipeline":
+                if event.stage == "pipeline" and event.status in ("completed", "failed"):
                     break
         finally:
             self._subscribers[pipeline_id].remove(q)

@@ -5,22 +5,21 @@ FIX: Usage/cost tracking + errors in all pipeline responses.
 FIX: API key auth via X-API-Key header (optional, enabled via settings).
 """
 import asyncio
-from fastapi import APIRouter, HTTPException, Depends, Security
+from typing import List, Literal, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Security
 from fastapi.responses import StreamingResponse
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any, Literal
-from dataclasses import asdict
 
-from contentai_pro.ai.orchestrator import orchestrator, PipelineConfig
 from contentai_pro.ai.agents.debate import debate_engine
 from contentai_pro.ai.atomizer.engine import atomizer_engine
 from contentai_pro.ai.dna.engine import dna_engine
+from contentai_pro.ai.orchestrator import PipelineConfig, orchestrator
 from contentai_pro.ai.trends.radar import trend_radar
-from contentai_pro.ai.llm_adapter import llm
-from contentai_pro.core.events import event_bus
-from contentai_pro.core.database import db
 from contentai_pro.core.config import settings
+from contentai_pro.core.database import db
+from contentai_pro.core.events import event_bus
 
 router = APIRouter()
 
@@ -86,7 +85,7 @@ class DNAScoreRequest(BaseModel):
 # ---------- Endpoints ----------
 
 @router.post("/generate")
-async def generate_full(req: GenerateRequest, _key: str = Depends(verify_api_key)):
+async def generate_full(req: GenerateRequest, _key: Optional[str] = Depends(verify_api_key)):
     """Full 7-stage pipeline: Research → Write → Edit → SEO → DNA → Debate → Atomize."""
     config = PipelineConfig(
         topic=req.topic,
@@ -121,7 +120,7 @@ async def generate_full(req: GenerateRequest, _key: str = Depends(verify_api_key
 
 
 @router.post("/generate/quick")
-async def generate_quick(req: QuickGenRequest, _key: str = Depends(verify_api_key)):
+async def generate_quick(req: QuickGenRequest, _key: Optional[str] = Depends(verify_api_key)):
     """Single-pass generation — no debate or atomizer."""
     config = PipelineConfig(
         topic=req.topic,
@@ -143,7 +142,7 @@ async def generate_quick(req: QuickGenRequest, _key: str = Depends(verify_api_ke
 
 
 @router.post("/generate/stream")
-async def generate_stream(req: GenerateRequest, _key: str = Depends(verify_api_key)):
+async def generate_stream(req: GenerateRequest, _key: Optional[str] = Depends(verify_api_key)):
     """SSE streaming pipeline — real-time stage updates."""
     pipeline_id = event_bus.new_pipeline_id()
 
@@ -169,8 +168,10 @@ async def generate_stream(req: GenerateRequest, _key: str = Depends(verify_api_k
         # already running and potentially emitting events.
         q = event_bus.register(pipeline_id)
 
-        # Now launch the pipeline; events will queue in the already-registered subscriber
-        asyncio.create_task(orchestrator.run(config, pipeline_id))
+        # Now launch the pipeline; events will queue in the already-registered subscriber.
+        # add_done_callback ensures unhandled exceptions (e.g. fail_fast) are logged.
+        task = asyncio.create_task(orchestrator.run(config, pipeline_id))
+        task.add_done_callback(lambda t: t.exception() if not t.cancelled() and t.exception() else None)
 
         async for event in event_bus.listen(pipeline_id, q):
             yield event.to_sse()
@@ -179,7 +180,7 @@ async def generate_stream(req: GenerateRequest, _key: str = Depends(verify_api_k
 
 
 @router.post("/atomize")
-async def atomize_content(req: AtomizeRequest, _key: str = Depends(verify_api_key)):
+async def atomize_content(req: AtomizeRequest, _key: Optional[str] = Depends(verify_api_key)):
     """Atomize content into platform variants."""
     result = await atomizer_engine.atomize(req.content, req.topic, req.platforms)
     return {
@@ -195,7 +196,7 @@ async def atomize_content(req: AtomizeRequest, _key: str = Depends(verify_api_ke
 
 
 @router.post("/debate")
-async def debate_content(req: DebateRequest, _key: str = Depends(verify_api_key)):
+async def debate_content(req: DebateRequest, _key: Optional[str] = Depends(verify_api_key)):
     """Run adversarial debate on content."""
     result = await debate_engine.run(req.content, req.topic, req.content_type)
     return {
@@ -221,7 +222,7 @@ async def debate_content(req: DebateRequest, _key: str = Depends(verify_api_key)
 
 
 @router.post("/dna/calibrate")
-async def calibrate_dna(req: DNACalibrateRequest, _key: str = Depends(verify_api_key)):
+async def calibrate_dna(req: DNACalibrateRequest, _key: Optional[str] = Depends(verify_api_key)):
     """Build a voice DNA profile from writing samples."""
     try:
         profile = dna_engine.calibrate(req.name, req.samples)
@@ -238,7 +239,7 @@ async def calibrate_dna(req: DNACalibrateRequest, _key: str = Depends(verify_api
 
 
 @router.post("/dna/score")
-async def score_dna(req: DNAScoreRequest, _key: str = Depends(verify_api_key)):
+async def score_dna(req: DNAScoreRequest, _key: Optional[str] = Depends(verify_api_key)):
     """Score content against a DNA profile."""
     result = dna_engine.score(req.text, req.profile_name)
     if "error" in result:
@@ -248,7 +249,7 @@ async def score_dna(req: DNAScoreRequest, _key: str = Depends(verify_api_key)):
 
 @router.get("/trends")
 async def get_trends(niche: Optional[str] = None, limit: int = 20,
-                     _key: str = Depends(verify_api_key)):
+                     _key: Optional[str] = Depends(verify_api_key)):
     """Get trending topics from HN, Reddit, Dev.to."""
     result = await trend_radar.scan(niche=niche, limit=limit)
     return {
@@ -264,7 +265,7 @@ async def get_trends(niche: Optional[str] = None, limit: int = 20,
 
 
 @router.get("/content/{content_id}")
-async def get_content(content_id: str, _key: str = Depends(verify_api_key)):
+async def get_content(content_id: str, _key: Optional[str] = Depends(verify_api_key)):
     """Retrieve generated content by ID."""
     content = await db.get_content(content_id)
     if not content:
