@@ -43,7 +43,7 @@ tags_metadata = [
 app = FastAPI(
     title="ContentAI Pro",
     version="2.0.0",
-    description="Multi-agent AI content generation with DNA voice matching, adversarial debate, and platform atomization.",
+    description="Multi-agent AI content generation with fact-checking, headline generation, DNA voice matching, adversarial debate, and platform atomization.",
     openapi_tags=tags_metadata,
     lifespan=lifespan,
 )
@@ -68,6 +68,7 @@ class HealthResponse(BaseModel):
     version: str
     mode: str
     agents: List[str]
+    stages: List[str]
     features: List[str]
 
 
@@ -77,7 +78,8 @@ async def health():
         status="operational",
         version="2.0.0",
         mode=settings.LLM_PROVIDER,
-        agents=["researcher", "writer", "editor", "seo", "debate", "atomizer"],
+        agents=["researcher", "writer", "fact_checker", "editor", "seo", "headline", "debate", "atomizer"],
+        stages=["research", "write", "fact_check", "edit", "seo", "headline", "dna", "debate", "atomize"],
         features=["dna_engine", "adversarial_debate", "content_atomizer", "trend_radar"],
     )
 

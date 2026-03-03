@@ -154,6 +154,10 @@ class LLMAdapter:
         if json_mode or "json" in system.lower():
             return self._mock_json(prompt_lower)
 
+        if "meticulous fact-checker" in system.lower():
+            return self._mock_fact_check()
+        if "headline" in system.lower() or "copywriter" in system.lower():
+            return self._mock_headlines()
         if "research" in system.lower():
             return self._mock_research(prompt_lower)
         if "write" in system.lower() or "draft" in system.lower():
@@ -258,6 +262,36 @@ class LLMAdapter:
 
     def _mock_platform_variant(self, prompt: str) -> str:
         return "[Platform-optimized variant with appropriate format, length, and style.]"
+
+    def _mock_fact_check(self) -> str:
+        return (
+            "## Fact-Check Report\n\n"
+            "**VERIFIED Claims:**\n"
+            "- 34% YoY growth in AI content tools ✅ (supported by McKinsey Digital Report 2025)\n"
+            "- 67% of Fortune 500 companies using AI writing ✅ (confirmed in research brief)\n"
+            "- Multi-agent systems outperform single-model by 2.3x ✅ (Stanford HAI Index)\n\n"
+            "**FLAGGED Claims:**\n"
+            "- '40% quality improvement' ⚠️ — research cites benchmark data; recommend specifying "
+            "the benchmark name for precision.\n\n"
+            "**MISSING Context:**\n"
+            "- Research mentions competitive landscape (Jasper, Copy.ai, Writer.com) not referenced "
+            "in draft — consider adding for reader context.\n\n"
+            "**Overall Accuracy Rating:** Good — minor clarification recommended."
+        )
+
+    def _mock_headlines(self) -> str:
+        return (
+            "[Question]: Is Your Content Strategy Ready for the AI Multi-Agent Revolution? "
+            "— (Challenges reader to self-assess, drives engagement)\n"
+            "[List]: 5 Reasons Multi-Agent AI Pipelines Produce Better Content Than Single Models "
+            "— (Listicle format, high CTR for B2B audiences)\n"
+            "[How-To]: How to Build a Multi-Agent Content Pipeline That Rivals Expert Human Writers "
+            "— (Practical, high search intent)\n"
+            "[Data-Driven]: 34% YoY Growth: Why Enterprises Are Switching to Multi-Agent AI Content "
+            "— (Leads with compelling statistic, builds credibility)\n"
+            "[Bold Statement]: Single-Model AI Content Is Already Obsolete "
+            "— (Contrarian hook, sparks debate and shares)"
+        )
 
     def _mock_json(self, prompt: str) -> str:
         return json.dumps({

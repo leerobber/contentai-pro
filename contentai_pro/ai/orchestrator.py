@@ -1,6 +1,6 @@
-"""Pipeline Orchestrator — 7-stage content generation pipeline.
+"""Pipeline Orchestrator — 9-stage content generation pipeline.
 
-Research → Writer → Editor → SEO → DNA Score → Debate → Atomizer
+Research → Write → Fact-Check → Edit → SEO → Headline → DNA Score → Debate → Atomizer
 """
 import asyncio
 import logging
@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, Any, Optional, List
 
-from contentai_pro.ai.agents.specialists import ResearchAgent, WriterAgent, EditorAgent, SEOAgent
+from contentai_pro.ai.agents.specialists import ResearchAgent, WriterAgent, EditorAgent, SEOAgent, FactCheckerAgent, HeadlineAgent
 from contentai_pro.ai.agents.debate import debate_engine, DebateResult
 from contentai_pro.ai.dna.engine import dna_engine
 from contentai_pro.ai.atomizer.engine import atomizer_engine, AtomizerResult
@@ -22,8 +22,10 @@ logger = logging.getLogger("contentai")
 class PipelineStage(str, Enum):
     RESEARCH = "research"
     WRITE = "write"
+    FACT_CHECK = "fact_check"
     EDIT = "edit"
     SEO = "seo"
+    HEADLINE = "headline"
     DNA = "dna"
     DEBATE = "debate"
     ATOMIZE = "atomize"
@@ -53,8 +55,10 @@ class PipelineResult:
     stages_completed: List[str]
     research: str = ""
     draft: str = ""
+    fact_check: Optional[Dict] = None  # keys: "report" (str); extensible for future flags_count, accuracy_rating
     edited: str = ""
     seo_optimized: str = ""
+    headlines: Optional[List[str]] = None
     dna_score: Optional[Dict] = None
     debate: Optional[Dict] = None
     atomized: Optional[Dict] = None
@@ -66,13 +70,15 @@ class PipelineResult:
 
 
 class Orchestrator:
-    """Runs the 7-stage content generation pipeline."""
+    """Runs the 9-stage content generation pipeline."""
 
     def __init__(self):
         self.researcher = ResearchAgent()
         self.writer = WriterAgent()
+        self.fact_checker = FactCheckerAgent()
         self.editor = EditorAgent()
         self.seo = SEOAgent()
+        self.headline = HeadlineAgent()
 
     async def _run_stage(self, pid: str, stage: str, coro) -> Any:
         """Run a single stage with timing and event emission."""
@@ -130,7 +136,23 @@ class Orchestrator:
                 logger.warning("Write stage error: %s", exc)
                 errors.append(f"write: {exc}")
 
-        # ---------- Stage 3: Edit ----------
+        # ---------- Stage 3: Fact-Check ----------
+        if PipelineStage.FACT_CHECK not in config.skip_stages:
+            try:
+                res, lat = await self._run_stage(pid, PipelineStage.FACT_CHECK, self.fact_checker.execute({
+                    "draft": result.draft,
+                    "research": result.research,
+                    "topic": config.topic,
+                }))
+                result.fact_check = {"report": res.output}
+                stages_completed.append(PipelineStage.FACT_CHECK.value)
+                stage_latencies[PipelineStage.FACT_CHECK.value] = lat
+                await event_bus.emit_stage(pid, PipelineStage.FACT_CHECK, "completed", {"length": len(res.output)})
+            except Exception as exc:
+                logger.warning("Fact-check stage error: %s", exc)
+                errors.append(f"fact_check: {exc}")
+
+        # ---------- Stage 4: Edit ----------
         if PipelineStage.EDIT not in config.skip_stages:
             try:
                 res, lat = await self._run_stage(pid, PipelineStage.EDIT, self.editor.execute({
@@ -146,7 +168,7 @@ class Orchestrator:
                 logger.warning("Edit stage error: %s", exc)
                 errors.append(f"edit: {exc}")
 
-        # ---------- Stage 4: SEO ----------
+        # ---------- Stage 5: SEO ----------
         if PipelineStage.SEO not in config.skip_stages:
             try:
                 res, lat = await self._run_stage(pid, PipelineStage.SEO, self.seo.execute({
@@ -164,7 +186,23 @@ class Orchestrator:
 
         current_content = result.seo_optimized or result.edited or result.draft
 
-        # ---------- Stage 5: DNA Score ----------
+        # ---------- Stage 6: Headline Generation ----------
+        if PipelineStage.HEADLINE not in config.skip_stages:
+            try:
+                res, lat = await self._run_stage(pid, PipelineStage.HEADLINE, self.headline.execute({
+                    "content": current_content,
+                    "topic": config.topic,
+                    "keywords": config.keywords,
+                }))
+                result.headlines = [line.strip() for line in res.output.splitlines() if line.strip()]
+                stages_completed.append(PipelineStage.HEADLINE.value)
+                stage_latencies[PipelineStage.HEADLINE.value] = lat
+                await event_bus.emit_stage(pid, PipelineStage.HEADLINE, "completed", {"count": len(result.headlines)})
+            except Exception as exc:
+                logger.warning("Headline stage error: %s", exc)
+                errors.append(f"headline: {exc}")
+
+        # ---------- Stage 7: DNA Score ----------
         if config.dna_profile and PipelineStage.DNA not in config.skip_stages:
             try:
                 t_dna = time.perf_counter()
@@ -180,7 +218,7 @@ class Orchestrator:
                 logger.warning("DNA stage error: %s", exc)
                 errors.append(f"dna: {exc}")
 
-        # ---------- Stages 6 & 7: Debate + Atomize (optionally parallel) ----------
+        # ---------- Stages 8 & 9: Debate + Atomize (optionally parallel) ----------
         debate_enabled = config.enable_debate and PipelineStage.DEBATE not in config.skip_stages
         atomize_enabled = config.enable_atomizer and PipelineStage.ATOMIZE not in config.skip_stages
 
