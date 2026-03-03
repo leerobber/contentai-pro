@@ -1,8 +1,8 @@
 """Settings — loaded from env / .env file."""
 import warnings
-from typing import List
+from typing import Dict, List
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     MODEL_NAME: str = "claude-sonnet-4-20250514"
     MAX_TOKENS: int = 4096
     TEMPERATURE: float = 0.7
+
+    # Per-agent model overrides (cheaper models for lower-stakes tasks).
+    # NOTE: Keep this consistent with LLM_PROVIDER. By default, leave empty so
+    # all agents use MODEL_NAME, and configure per-provider overrides via env/.env.
+    AGENT_MODELS: Dict[str, str] = Field(default_factory=dict)
 
     # App
     APP_NAME: str = "ContentAI Pro"
@@ -36,7 +41,7 @@ class Settings(BaseSettings):
     DNA_DIMENSIONS: int = 14
 
     # Debate
-    DEBATE_MAX_ROUNDS: int = 3
+    DEBATE_MAX_ROUNDS: int = 2  # Reduced from 3 for cost efficiency
     DEBATE_PASS_THRESHOLD: float = 7.5
 
     # Atomizer

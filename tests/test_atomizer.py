@@ -1,15 +1,19 @@
 """Tests for the Content Atomizer Engine."""
+import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from contentai_pro.ai.atomizer.engine import PLATFORM_SPECS
 
+_ALL_PLATFORMS = ["twitter", "linkedin", "instagram", "email", "reddit", "youtube", "tiktok", "podcast"]
+_MOCK_BATCH_RESPONSE = json.dumps({p: "Mock platform content output." for p in _ALL_PLATFORMS})
+
 
 @pytest.fixture(autouse=True)
 def _patch_llm(monkeypatch):
     mock = MagicMock()
-    mock.generate = AsyncMock(return_value="Mock platform content output.")
+    mock.generate = AsyncMock(return_value=_MOCK_BATCH_RESPONSE)
     mock.provider = "mock"
     import contentai_pro.ai.atomizer.engine as atom_mod
     monkeypatch.setattr(atom_mod, "llm", mock)
@@ -54,8 +58,8 @@ async def test_twitter_character_limit_enforced(monkeypatch):
     import contentai_pro.ai.atomizer.engine as atom_mod
 
     long_mock = MagicMock()
-    # Return content much longer than 280 chars
-    long_mock.generate = AsyncMock(return_value="X" * 500)
+    # Return batch JSON with twitter content much longer than 280 chars
+    long_mock.generate = AsyncMock(return_value=json.dumps({"twitter": "X" * 500}))
     long_mock.provider = "mock"
     monkeypatch.setattr(atom_mod, "llm", long_mock)
 
