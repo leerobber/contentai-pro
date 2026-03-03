@@ -16,7 +16,7 @@ class SemanticCache:
 
     def _hash_prompt(self, system: str, prompt: str) -> str:
         content = f"{system}|||{prompt}"
-        return hashlib.sha256(content.encode()).hexdigest()[:16]
+        return hashlib.sha256(content.encode()).hexdigest()[:32]
 
     async def get_or_generate(
         self,
