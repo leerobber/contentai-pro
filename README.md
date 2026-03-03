@@ -57,7 +57,8 @@ docker run -p 8000:8000 -e ANTHROPIC_API_KEY=sk-ant-xxx contentai-pro
 | POST | `/api/content/dna/calibrate` | Build voice DNA profile |
 | POST | `/api/content/dna/score` | Score content against profile |
 | GET | `/api/content/trends` | Trending topics |
-| GET | `/api/content/{id}` | Retrieve content by ID |
+| GET | `/api/content` | List generated content (paginated) |
+| GET | `/api/content/content/{id}` | Retrieve content by ID |
 | GET | `/api/health` | Health check |
 
 ## Project Structure

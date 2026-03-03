@@ -63,6 +63,7 @@ class PipelineResult:
     debate: Optional[Dict] = None
     atomized: Optional[Dict] = None
     final_content: str = ""
+    word_count: int = 0
     total_latency_ms: float = 0.0
     stage_latencies: Dict[str, float] = field(default_factory=dict)
     errors: List[str] = field(default_factory=list)
@@ -307,6 +308,7 @@ class Orchestrator:
         result.stages_completed = stages_completed
         result.stage_latencies = stage_latencies
         result.errors = errors
+        result.word_count = len(result.final_content.split())
         result.total_latency_ms = (time.perf_counter() - t0) * 1000
         pipeline_stage_label = "published" if (result.debate and result.debate.get("passed")) else "draft"
         result.content_id = await db.save_content(
