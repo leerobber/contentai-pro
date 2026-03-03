@@ -2,7 +2,7 @@
 import json
 import time
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
 from contentai_pro.ai.llm_adapter import llm
 from contentai_pro.core.config import settings
 

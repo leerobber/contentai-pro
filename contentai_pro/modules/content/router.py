@@ -1,37 +1,25 @@
 """Content API Router — Full pipeline, quick gen, debate, atomize, DNA, trends."""
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
-from dataclasses import asdict
+from pydantic import BaseModel
+from typing import List, Optional
 
 from contentai_pro.ai.orchestrator import orchestrator, PipelineConfig
 from contentai_pro.ai.agents.debate import debate_engine
 from contentai_pro.ai.atomizer.engine import atomizer_engine
 from contentai_pro.ai.dna.engine import dna_engine
 from contentai_pro.ai.trends.radar import trend_radar
-from contentai_pro.ai.llm_adapter import llm
 from contentai_pro.core.events import event_bus
 from contentai_pro.core.database import db
+from contentai_pro.modules.content.schemas import (
+    GenerateRequest,
+    DNACalibrateRequest,
+)
 
 router = APIRouter()
 
 
 # ---------- Request / Response Models ----------
-
-class GenerateRequest(BaseModel):
-    topic: str
-    content_type: str = "blog_post"
-    audience: str = "tech professionals"
-    tone: str = "professional yet approachable"
-    word_count: int = 1200
-    keywords: List[str] = Field(default_factory=list)
-    dna_profile: Optional[str] = None
-    enable_debate: bool = True
-    enable_atomizer: bool = True
-    atomizer_platforms: Optional[List[str]] = None
-    skip_stages: List[str] = Field(default_factory=list)
-
 
 class QuickGenRequest(BaseModel):
     topic: str
@@ -50,11 +38,6 @@ class DebateRequest(BaseModel):
     content: str
     topic: str
     content_type: str = "blog_post"
-
-
-class DNACalibrateRequest(BaseModel):
-    name: str
-    samples: List[str]
 
 
 class DNAScoreRequest(BaseModel):
@@ -77,7 +60,7 @@ async def generate_full(req: GenerateRequest):
         dna_profile=req.dna_profile,
         enable_debate=req.enable_debate,
         enable_atomizer=req.enable_atomizer,
-        atomizer_platforms=req.atomizer_platforms,
+        atomizer_platforms=[p.value for p in req.atomizer_platforms] if req.atomizer_platforms else None,
         skip_stages=req.skip_stages,
     )
     result = await orchestrator.run(config)
@@ -131,7 +114,7 @@ async def generate_stream(req: GenerateRequest):
         dna_profile=req.dna_profile,
         enable_debate=req.enable_debate,
         enable_atomizer=req.enable_atomizer,
-        atomizer_platforms=req.atomizer_platforms,
+        atomizer_platforms=[p.value for p in req.atomizer_platforms] if req.atomizer_platforms else None,
         skip_stages=req.skip_stages,
     )
 
@@ -235,3 +218,19 @@ async def get_content(content_id: str):
     if not content:
         raise HTTPException(status_code=404, detail="Content not found")
     return content
+
+
+@router.get("/content/{content_id}/history")
+async def get_content_history(content_id: str):
+    """List all saved versions for a content item."""
+    versions = await db.get_content_history(content_id)
+    return {"content_id": content_id, "versions": versions}
+
+
+@router.post("/content/{content_id}/restore/{version_id}")
+async def restore_content_version(content_id: str, version_id: str):
+    """Restore a content item to a previous version."""
+    restored = await db.restore_version(content_id, version_id)
+    if not restored:
+        raise HTTPException(status_code=404, detail="Version not found")
+    return {"status": "restored", "content_id": content_id, "version_id": version_id}
