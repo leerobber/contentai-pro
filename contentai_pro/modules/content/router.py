@@ -272,15 +272,22 @@ async def list_content(limit: int = 20, offset: int = 0,
 @router.get("/content/{content_id}/history")
 async def get_content_history(content_id: str, _key: Optional[str] = Depends(verify_api_key)):
     """List all saved versions for a content item."""
-    versions = await db.get_content_history(content_id)
-    return {"content_id": content_id, "versions": versions}
+    # Version history is not currently backed by any versioning logic.
+    # Guard this endpoint to avoid exposing non-functional behavior
+    # until content versions are actually being recorded.
+    raise HTTPException(
+        status_code=501,
+        detail="Content version history is not yet available; versions are not currently being saved.",
+    )
 
 
 @router.post("/content/{content_id}/restore/{version_id}")
 async def restore_content_version(content_id: str, version_id: str,
                                   _key: Optional[str] = Depends(verify_api_key)):
     """Restore a content item to a previous version."""
-    restored = await db.restore_version(content_id, version_id)
-    if not restored:
-        raise HTTPException(status_code=404, detail="Version not found")
-    return {"status": "restored", "content_id": content_id, "version_id": version_id}
+    # Version restore is not currently supported because versions
+    # are not being saved. Guard this endpoint explicitly.
+    raise HTTPException(
+        status_code=501,
+        detail="Content version restore is not yet available; versions are not currently being saved.",
+    )
