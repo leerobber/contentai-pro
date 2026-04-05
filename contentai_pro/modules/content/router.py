@@ -262,21 +262,23 @@ async def get_content(content_id: str, _key: Optional[str] = Depends(verify_api_
 
 
 @router.get("")
-async def list_content(limit: int = 20, offset: int = 0):
+async def list_content(limit: int = 20, offset: int = 0,
+                       _key: Optional[str] = Depends(verify_api_key)):
     """List generated content items ordered by most recent."""
     items = await db.get_content_list(limit=limit, offset=offset)
     return {"items": items, "limit": limit, "offset": offset, "page_count": len(items)}
 
 
 @router.get("/content/{content_id}/history")
-async def get_content_history(content_id: str):
+async def get_content_history(content_id: str, _key: Optional[str] = Depends(verify_api_key)):
     """List all saved versions for a content item."""
     versions = await db.get_content_history(content_id)
     return {"content_id": content_id, "versions": versions}
 
 
 @router.post("/content/{content_id}/restore/{version_id}")
-async def restore_content_version(content_id: str, version_id: str):
+async def restore_content_version(content_id: str, version_id: str,
+                                  _key: Optional[str] = Depends(verify_api_key)):
     """Restore a content item to a previous version."""
     restored = await db.restore_version(content_id, version_id)
     if not restored:
