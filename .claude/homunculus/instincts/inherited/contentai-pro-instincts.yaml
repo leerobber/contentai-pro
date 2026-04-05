@@ -1,0 +1,425 @@
+# Instincts generated from https://github.com/leerobber/contentai-pro
+# Generated: 2026-04-05T15:28:48.506Z
+# Version: 2.0
+# NOTE: This file supplements (does not replace) any existing curated instincts.
+# High-confidence manually curated instincts should be preserved alongside these.
+
+---
+id: contentai-pro-commit-length
+trigger: "when writing a commit message"
+confidence: 0.6
+domain: git
+source: repo-analysis
+source_repo: https://github.com/leerobber/contentai-pro
+---
+
+# Contentai Pro Commit Length
+
+## Action
+
+Keep commit messages concise (~49 characters)
+
+## Evidence
+
+- Average commit message length: 49 chars
+- Based on 11 commits
+
+---
+id: contentai-pro-naming-files
+trigger: "when creating a new file"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/leerobber/contentai-pro
+---
+
+# Contentai Pro Naming Files
+
+## Action
+
+Use snake_case naming convention
+
+## Evidence
+
+- Analyzed file naming patterns in repository
+- Dominant pattern: snake_case
+
+---
+id: contentai-pro-import-relative
+trigger: "when importing modules"
+confidence: 0.75
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/leerobber/contentai-pro
+---
+
+# Contentai Pro Import Relative
+
+## Action
+
+Use relative imports for project files
+
+## Evidence
+
+- Import analysis shows relative import pattern
+- Example: import { x } from '../lib/x'
+
+---
+id: contentai-pro-export-style
+trigger: "when exporting from a module"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/leerobber/contentai-pro
+---
+
+# Contentai Pro Export Style
+
+## Action
+
+Prefer named exports
+
+## Evidence
+
+- Export pattern analysis
+- Dominant style: named
+
+---
+id: contentai-pro-test-separate
+trigger: "when writing tests"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/leerobber/contentai-pro
+---
+
+# Contentai Pro Test Separate
+
+## Action
+
+Place tests in the tests/ or __tests__/ directory, mirroring src structure
+
+## Evidence
+
+- Separate test directory pattern detected
+- Tests live in dedicated test folders
+
+---
+id: contentai-pro-test-naming
+trigger: "when creating a test file"
+confidence: 0.85
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/leerobber/contentai-pro
+---
+
+# Contentai Pro Test Naming
+
+## Action
+
+Name test files using the pattern: *.test.ts
+
+## Evidence
+
+- File pattern: *.test.ts
+- Consistent across test files
+
+---
+id: contentai-pro-workflow-code-cleanup-remove-unused-imports
+trigger: "when doing code cleanup remove unused imports"
+confidence: 0.6
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/leerobber/contentai-pro
+---
+
+# Contentai Pro Workflow Code Cleanup Remove Unused Imports
+
+## Action
+
+Follow the code-cleanup-remove-unused-imports workflow:
+1. Identify unused imports in multiple Python files.
+2. Remove the unused imports from each file.
+3. Commit changes with a message referencing code cleanup.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~2x per month
+- Files: contentai_pro/ai/agents/debate.py, contentai_pro/ai/dna/engine.py, contentai_pro/ai/llm_adapter.py
+
+---
+id: contentai-pro-workflow-security-fix-ambiguous-regex-redos
+trigger: "when doing security fix ambiguous regex redos"
+confidence: 0.6
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/leerobber/contentai-pro
+---
+
+# Contentai Pro Workflow Security Fix Ambiguous Regex Redos
+
+## Action
+
+Follow the security-fix-ambiguous-regex-redos workflow:
+1. Identify the vulnerable or ambiguous regex in contentai_pro/ai/dna/engine.py.
+2. Update the regex to a safer, unambiguous pattern.
+3. Commit the fix with a message referencing ReDoS or regex ambiguity.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~2x per month
+- Files: contentai_pro/ai/dna/engine.py
+
+---
+id: contentai-pro-instinct-file-naming
+trigger: "When creating a new Python file"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: leerobber/contentai-pro
+---
+
+# Contentai Pro Instinct File Naming
+
+## Action
+
+Name the file using snake_case
+
+## Evidence
+
+- Pattern in files: contentai_pro/ai/agents/debate.py, contentai_pro/core/cache.py
+
+---
+id: contentai-pro-instinct-function-naming
+trigger: "When defining a new function"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: leerobber/contentai-pro
+---
+
+# Contentai Pro Instinct Function Naming
+
+## Action
+
+Name the function using camelCase
+
+## Evidence
+
+- Naming conventions: functions use camelCase
+
+---
+id: contentai-pro-instinct-class-naming
+trigger: "When defining a new class"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: leerobber/contentai-pro
+---
+
+# Contentai Pro Instinct Class Naming
+
+## Action
+
+Name the class using PascalCase
+
+## Evidence
+
+- Naming conventions: classes use PascalCase
+
+---
+id: contentai-pro-instinct-constant-naming
+trigger: "When defining a constant"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: leerobber/contentai-pro
+---
+
+# Contentai Pro Instinct Constant Naming
+
+## Action
+
+Name the constant using SCREAMING_SNAKE_CASE
+
+## Evidence
+
+- Naming conventions: constants use SCREAMING_SNAKE_CASE
+
+---
+id: contentai-pro-instinct-import-style
+trigger: "When importing modules within the package"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: leerobber/contentai-pro
+---
+
+# Contentai Pro Instinct Import Style
+
+## Action
+
+Use relative imports
+
+## Evidence
+
+- ImportStyle: relative
+
+---
+id: contentai-pro-instinct-export-style
+trigger: "When exporting functions or classes"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: leerobber/contentai-pro
+---
+
+# Contentai Pro Instinct Export Style
+
+## Action
+
+Use named exports
+
+## Evidence
+
+- ExportStyle: named
+
+---
+id: contentai-pro-instinct-test-location
+trigger: "When adding new tests"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: leerobber/contentai-pro
+---
+
+# Contentai Pro Instinct Test Location
+
+## Action
+
+Place test files in the separate 'tests' folder
+
+## Evidence
+
+- Architecture: testLocation is separate
+- Pattern in folderStructure
+
+---
+id: contentai-pro-instinct-test-type
+trigger: "When writing tests"
+confidence: 0.7
+domain: testing
+source: repo-analysis
+source_repo: leerobber/contentai-pro
+---
+
+# Contentai Pro Instinct Test Type
+
+## Action
+
+Write unit tests
+
+## Evidence
+
+- Testing: testTypes include unit
+
+---
+id: contentai-pro-instinct-test-pattern
+trigger: "When naming a test file"
+confidence: 0.6
+domain: testing
+source: repo-analysis
+source_repo: leerobber/contentai-pro
+---
+
+# Contentai Pro Instinct Test Pattern
+
+## Action
+
+Use the pattern *.test.ts
+
+## Evidence
+
+- Testing: filePattern is *.test.ts
+
+---
+id: contentai-pro-instinct-commit-format-freeform
+trigger: "When making a commit"
+confidence: 0.8
+domain: git
+source: repo-analysis
+source_repo: leerobber/contentai-pro
+---
+
+# Contentai Pro Instinct Commit Format Freeform
+
+## Action
+
+Write a concise, freeform commit message describing the change
+
+## Evidence
+
+- Commits: freeform, e.g. 'Fix ambiguous regex ReDoS vulnerability in dna/engine.py'
+
+---
+id: contentai-pro-instinct-commit-prefix-optional
+trigger: "When writing a commit message"
+confidence: 0.8
+domain: git
+source: repo-analysis
+source_repo: leerobber/contentai-pro
+---
+
+# Contentai Pro Instinct Commit Prefix Optional
+
+## Action
+
+Do not require a specific prefix in the commit message
+
+## Evidence
+
+- Commits: no enforced prefixes, e.g. 'Add threading.Lock to LRUCache for genuine thread safety'
+
+---
+id: contentai-pro-instinct-code-cleanup-unused-imports
+trigger: "When someone wants to clean up the codebase by removing unused imports"
+confidence: 0.95
+domain: workflow
+source: repo-analysis
+source_repo: leerobber/contentai-pro
+---
+
+# Contentai Pro Instinct Code Cleanup Unused Imports
+
+## Action
+
+Identify and remove unused imports in all relevant Python files and commit with a code cleanup message
+
+## Evidence
+
+- Workflow: code-cleanup-remove-unused-imports
+- Commits: 'Remove unused imports across the codebase'
+- Pattern in files: contentai_pro/ai/agents/debate.py, contentai_pro/core/cache.py, etc.
+
+---
+id: contentai-pro-instinct-security-fix-regex-redos
+trigger: "When someone discovers a ReDoS or ambiguous regex vulnerability in the DNA engine"
+confidence: 0.9
+domain: workflow
+source: repo-analysis
+source_repo: leerobber/contentai-pro
+---
+
+# Contentai Pro Instinct Security Fix Regex Redos
+
+## Action
+
+Update the regex in contentai_pro/ai/dna/engine.py to a safer, unambiguous pattern and commit with a message referencing ReDoS or regex ambiguity
+
+## Evidence
+
+- Workflow: security-fix-ambiguous-regex-redos
+- Commits: 'Fix ambiguous regex ReDoS vulnerability in dna/engine.py'
+
