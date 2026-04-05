@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """ContentAI Pro — Launch script."""
 import os
+
 import uvicorn
 
 if __name__ == "__main__":

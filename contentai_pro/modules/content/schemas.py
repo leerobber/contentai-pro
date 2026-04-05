@@ -14,6 +14,7 @@ class ContentType(str, Enum):
     newsletter = "newsletter"
     social_post = "social_post"
     press_release = "press_release"
+    landing_page = "landing_page"
 
 
 class ToneType(str, Enum):
@@ -45,6 +46,7 @@ _CONTENT_TYPE_MIN_WORDS = {
     ContentType.newsletter: 200,
     ContentType.social_post: 100,
     ContentType.press_release: 200,
+    ContentType.landing_page: 200,
 }
 
 

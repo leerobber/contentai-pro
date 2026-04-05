@@ -21,6 +21,7 @@ class Database:
         self._conn = await aiosqlite.connect(self._path)
         self._conn.row_factory = aiosqlite.Row
         await self._conn.executescript("""
+            PRAGMA foreign_keys = ON;
             CREATE TABLE IF NOT EXISTS content (
                 id TEXT PRIMARY KEY,
                 topic TEXT NOT NULL,
@@ -160,20 +161,35 @@ class Database:
         return result
 
     async def restore_version(self, content_id: str, version_id: str) -> bool:
-        """Restore content body from a specific version."""
-        cursor = await self._conn.execute(
-            "SELECT body FROM content_versions WHERE id = ? AND content_id = ?",
-            (version_id, content_id)
-        )
-        row = await cursor.fetchone()
-        if not row:
-            return False
-        now = datetime.now(timezone.utc).isoformat()
-        await self._conn.execute(
-            "UPDATE content SET body = ?, updated_at = ? WHERE id = ?",
-            (row["body"], now, content_id)
-        )
-        await self._conn.commit()
+        """Restore content body from a specific version and record the restoration."""
+        async with self._write_lock:
+            cursor = await self._conn.execute(
+                "SELECT body, stage, metadata FROM content_versions WHERE id = ? AND content_id = ?",
+                (version_id, content_id)
+            )
+            row = await cursor.fetchone()
+            if not row:
+                return False
+            now = datetime.now(timezone.utc).isoformat()
+            await self._conn.execute(
+                "UPDATE content SET body = ?, updated_at = ? WHERE id = ?",
+                (row["body"], now, content_id)
+            )
+            # Record the restoration as a new version entry for audit trail
+            cursor = await self._conn.execute(
+                "SELECT COALESCE(MAX(version_num), 0) + 1 FROM content_versions WHERE content_id = ?",
+                (content_id,)
+            )
+            version_row = await cursor.fetchone()
+            next_version = version_row[0] if version_row else 1
+            vid = str(uuid.uuid4())
+            await self._conn.execute(
+                "INSERT INTO content_versions (id, content_id, stage, body, metadata, version_num, created_at) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (vid, content_id, row["stage"], row["body"],
+                 row["metadata"] or "{}", next_version, now)
+            )
+            await self._conn.commit()
         return True
 
     async def close(self):
