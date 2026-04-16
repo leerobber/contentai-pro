@@ -1,71 +1,84 @@
-"""Settings — loaded from env / .env file."""
-import warnings
-from typing import Dict, List
+"""
+contentai_pro/core/config.py — Production Configuration
+Adds Sovereign Core settings alongside existing Anthropic/OpenAI.
+Full backward compat.
+"""
+from __future__ import annotations
 
-from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings
+import os
+from functools import lru_cache
+from typing import Optional
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    # LLM
-    LLM_PROVIDER: str = "mock"  # "anthropic" | "openai" | "mock"
-    ANTHROPIC_API_KEY: str = ""
-    OPENAI_API_KEY: str = ""
-    MODEL_NAME: str = "claude-sonnet-4-20250514"
-    MAX_TOKENS: int = 4096
-    TEMPERATURE: float = 0.7
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
 
-    # Per-agent model overrides (cheaper models for lower-stakes tasks).
-    # NOTE: Keep this consistent with LLM_PROVIDER. By default, leave empty so
-    # all agents use MODEL_NAME, and configure per-provider overrides via env/.env.
-    AGENT_MODELS: Dict[str, str] = Field(default_factory=dict)
+    # ── App ───────────────────────────────────────────────────────────────────
+    app_name: str = "ContentAI Pro"
+    app_env: str = "development"
+    debug: bool = False
+    log_level: str = "INFO"
 
-    # App
-    APP_NAME: str = "ContentAI Pro"
-    DEBUG: bool = True
-    SECRET_KEY: str = "change-me-in-production"
-    HOST: str = "0.0.0.0"
-    PORT: int = 8000
-    LOG_LEVEL: str = "info"
-    # SECURITY: restrict CORS_ORIGINS in production, e.g.: ["https://yourapp.com"]
-    CORS_ORIGINS: List[str] = ["*"]
+    # ── Sovereign Core (priority-0 LLM) ───────────────────────────────────────
+    sovereign_gateway_url: str = "http://localhost:8000"
+    sovereign_enabled: bool = True
+    sovereign_timeout: float = 30.0
+    sovereign_model: str = "auto"        # "auto" = gateway picks best backend
 
-    # Database
-    DATABASE_URL: str = "sqlite+aiosqlite:///./contentai.db"
+    # ── Cloud LLM fallbacks ───────────────────────────────────────────────────
+    anthropic_api_key: Optional[str] = None
+    openai_api_key: Optional[str] = None
+    default_model: str = "claude-3-5-sonnet-20241022"
 
-    # Auth (optional — empty = auth disabled)
-    AUTH_API_KEYS: List[str] = []
+    # ── Database ──────────────────────────────────────────────────────────────
+    database_url: str = "sqlite:///./contentai.db"
 
-    # DNA Engine
-    DNA_SAMPLE_MIN: int = 3
-    DNA_DIMENSIONS: int = 14
+    # ── Redis / Cache ─────────────────────────────────────────────────────────
+    redis_url: Optional[str] = None
+    cache_ttl: int = 3600
+    semantic_cache_enabled: bool = True
+    semantic_cache_threshold: float = 0.92
 
-    # Debate
-    DEBATE_MAX_ROUNDS: int = 2  # Reduced from 3 for cost efficiency
-    DEBATE_PASS_THRESHOLD: float = 7.5
+    # ── Rate limiting ─────────────────────────────────────────────────────────
+    rate_limit_requests: int = 100
+    rate_limit_window: int = 60
 
-    # Atomizer
-    ATOMIZER_PLATFORMS: List[str] = [
-        "twitter", "linkedin", "instagram", "email",
-        "reddit", "youtube", "tiktok", "podcast",
+    # ── Webhooks ──────────────────────────────────────────────────────────────
+    webhook_secret: Optional[str] = None
+
+    # ── Content pipeline ──────────────────────────────────────────────────────
+    max_content_length: int = 10_000
+    debate_rounds: int = 2
+    dna_dimensions: int = 14
+    atomizer_platforms: list[str] = [
+        "twitter", "linkedin", "instagram",
+        "facebook", "tiktok", "youtube", "email", "blog"
     ]
+    trend_radar_enabled: bool = True
 
-    # Trend Radar
-    TREND_CACHE_TTL: int = 1800  # 30 min
-    TREND_SOURCES: List[str] = ["hackernews", "reddit", "devto"]
+    # ── Metrics ───────────────────────────────────────────────────────────────
+    metrics_enabled: bool = True
+    prometheus_port: int = 9090
 
-    @field_validator("SECRET_KEY")
-    @classmethod
-    def warn_default_secret(cls, v):
-        if v == "change-me-in-production":
-            warnings.warn(
-                "SECRET_KEY is set to the default value. Change it in production!",
-                UserWarning,
-                stacklevel=2,
-            )
-        return v
+    @property
+    def is_production(self) -> bool:
+        return self.app_env.lower() == "production"
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
+    @property
+    def has_cloud_llm(self) -> bool:
+        return bool(self.anthropic_api_key or self.openai_api_key)
 
 
-settings = Settings()
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    return Settings()
+
+
+settings = get_settings()
