@@ -1,4 +1,3 @@
-"""SQLite usage tracking."""
 import sqlite3
 import time
 from config.settings import DB_PATH
@@ -12,6 +11,15 @@ def init_db():
             topic TEXT,
             brand_voice TEXT,
             created_at REAL NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS api_keys (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            key TEXT UNIQUE NOT NULL,
+            label TEXT,
+            created_at REAL NOT NULL,
+            active INTEGER DEFAULT 1
         )
     """)
     conn.commit()
@@ -28,8 +36,7 @@ def log_usage(content_type: str, topic: str = "", brand_voice: str = ""):
 
 def get_usage_stats() -> dict:
     conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute("SELECT content_type, COUNT(*) FROM usage_log GROUP BY content_type")
+    cur = conn.execute("SELECT content_type, COUNT(*) FROM usage_log GROUP BY content_type")
     rows = cur.fetchall()
     conn.close()
     return {row[0]: row[1] for row in rows}
