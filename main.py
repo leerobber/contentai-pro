@@ -1,16 +1,14 @@
-"""
-ContentAI Pro — Main Entry Point
-SovereignNation | Built by GH05T3
-"""
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from api.routes import router
-from config.settings import settings
+from db.models import init_db
+from config.settings import DEBUG
 
 app = FastAPI(
     title="ContentAI Pro",
-    description="AI-powered content creation platform by SovereignNation",
-    version="0.1.0"
+    description="AI-powered content generation API",
+    version="1.0.0",
+    docs_url="/docs" if DEBUG else None
 )
 
 app.add_middleware(
@@ -21,16 +19,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(router, prefix="/api/v1")
+@app.on_event("startup")
+async def startup():
+    init_db()
+
+app.include_router(router)
 
 @app.get("/")
 async def root():
-    return {"status": "online", "product": "ContentAI Pro", "company": "SovereignNation"}
+    return {"service": "ContentAI Pro", "version": "1.0.0", "status": "running"}
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy", "version": "0.1.0"}
+    return {"status": "ok"}
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host=settings.HOST, port=settings.PORT, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8001, reload=DEBUG)
